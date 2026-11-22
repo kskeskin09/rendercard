@@ -1,0 +1,187 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+export function createViewport(
+  element,
+  root,
+  { select, editing, change, moved }
+) {
+  const renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    preserveDrawingBuffer: true
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
+  renderer.domElement.setAttribute('aria-label', '3B sahne');
+  element.prepend(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color('#26322b');
+  scene.fog = new THREE.FogExp2('#26322b', 0.042);
+  scene.add(root);
+  const camera = new THREE.PerspectiveCamera(35, 1, 0.08, 160);
+  const orbit = new OrbitControls(camera, renderer.domElement);
+  orbit.enableDamping = true;
+  orbit.minDistance = 1;
+  orbit.maxDistance = 70;
+
+  function reset() {
+    camera.position.set(6.5, 4.3, 8.7);
+    orbit.target.set(0, 0.95, 0);
+    orbit.update();
+  }
+  reset();
+
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(180, 180),
+    new THREE.MeshStandardMaterial({ color: '#344336', roughness: 0.92 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.012;
+  floor.receiveShadow = true;
+  scene.add(floor);
+  const grid = new THREE.GridHelper(80, 80, '#a7bca3', '#83977f');
+  grid.position.y = 0.004;
+  grid.material.transparent = true;
+  grid.material.depthWrite = false;
+  grid.material.opacity = 0.48;
+  scene.add(grid);
+
+  scene.add(new THREE.HemisphereLight('#eff6dc', '#657667', 2.05));
+  const sun = new THREE.DirectionalLight('#fff3da', 3.2);
+  sun.position.set(-4, 8, 5);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, {
+    left: -10,
+    right: 10,
+    top: 10,
+    bottom: -10,
+    far: 28
+  });
+  sun.shadow.normalBias = 0.028;
+  sun.shadow.bias = -0.0002;
+  scene.add(sun);
+  const rim = new THREE.DirectionalLight('#c3d9ff', 1.8);
+  rim.position.set(5, 4, -8);
+  scene.add(rim);
+
+  const transform = new TransformControls(camera, renderer.domElement);
+  transform.setSize(0.78);
+  const transformHelper = transform.getHelper();
+  scene.add(transformHelper);
+  transform.addEventListener('dragging-changed', (event) => {
+    orbit.enabled = !event.value;
+  });
+  transform.addEventListener('objectChange', change);
+  transform.addEventListener('mouseDown', editing);
+  transform.addEventListener('mouseUp', moved);
+
+  const outline = new THREE.BoxHelper(new THREE.Object3D(), '#d8f882');
+  outline.material.transparent = true;
+  outline.material.opacity = 0.56;
+  outline.visible = false;
+  scene.add(outline);
+  let selected;
+  let mode = 'select';
+
+  function updateSelection(object, nextMode) {
+    selected = object;
+    mode = nextMode;
+    if (!selected || mode === 'select') transform.detach();
+    else {
+      transform.attach(selected);
+      transform.setMode(mode);
+    }
+  }
+
+  const pointer = new THREE.Vector2();
+  const ray = new THREE.Raycaster();
+  let down;
+  renderer.domElement.addEventListener('pointerdown', (event) => {
+    if (event.isPrimary && event.button === 0 && !transform.axis)
+      down = [event.clientX, event.clientY];
+    else down = undefined;
+  });
+  renderer.domElement.addEventListener('pointerup', (event) => {
+    if (!event.isPrimary || event.button !== 0 || !down || transform.dragging)
+      return;
+    const distance = Math.hypot(
+      event.clientX - down[0],
+      event.clientY - down[1]
+    );
+    down = undefined;
+    if (distance > 4) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.set(
+      (2 * (event.clientX - rect.left)) / rect.width - 1,
+      1 - (2 * (event.clientY - rect.top)) / rect.height
+    );
+    ray.setFromCamera(pointer, camera);
+    select(
+      ray.intersectObjects(root.children, true)[0]?.object,
+      event.shiftKey
+    );
+  });
+  renderer.domElement.addEventListener('pointercancel', () => {
+    down = undefined;
+  });
+
+  let recordingSize = false;
+  function resize() {
+    if (recordingSize) return;
+    const width = Math.max(1, element.clientWidth);
+    const height = Math.max(1, element.clientHeight);
+    renderer.domElement.style.width = width + 'px';
+    renderer.domElement.style.height = height + 'px';
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(element);
+  resize();
+
+  const axisWidget = element.querySelector('.axis-widget');
+  const axes = ['x', 'y', 'z'].map((axis, index) => ({
+    label: axisWidget.querySelector('.axis-' + axis),
+    direction: new THREE.Vector3().setComponent(index, 1)
+  }));
+  const orientation = new THREE.Quaternion();
+  const inverseOrientation = new THREE.Quaternion();
+  const point = new THREE.Vector3();
+
+  function render(clean = false) {
+    orbit.update();
+    if (!clean && !orientation.equals(camera.quaternion)) {
+      orientation.copy(camera.quaternion);
+      inverseOrientation.copy(orientation).invert();
+      for (const { label, direction } of axes) {
+        point.copy(direction).applyQuaternion(inverseOrientation);
+        label.style.left = 19 + point.x * 17 + 'px';
+        label.style.top = 18 - point.y * 17 + 'px';
+        label.style.zIndex = String(Math.round(10 + point.z * 4));
+      }
+    }
+    grid.visible = !clean;
+    transformHelper.visible = !clean && Boolean(transform.object);
+    outline.visible = !clean && Boolean(selected);
+    if (outline.visible) outline.setFromObject(selected);
+    renderer.render(scene, camera);
+  }
+
+  function lockSize(value) {
+    recordingSize = value;
+    if (!value) resize();
+  }
+  return {
+    render,
+    reset,
+    updateSelection,
+    lockSize,
+    canvas: renderer.domElement
+  };
+}

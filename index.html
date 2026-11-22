@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Rendercard ile 3B sahneler oluştur, canlandır ve dışa aktar."
+    />
+    <title>Rendercard · 3B Stüdyo</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" data-icon="layers"></span
+        ><span>rendercard<span class="brand-period">.</span></span>
+      </div>
+      <div class="project">
+        <span data-icon="folder"></span> <span>Yeni sahne</span>
+      </div>
+      <div class="top-actions">
+        <button
+          id="open"
+          class="quiet"
+          data-icon="folder"
+          title="Projeyi aç"
+          aria-label="Projeyi aç"
+        ></button
+        ><input id="project-file" type="file" accept=".json" hidden />
+        <button id="save" class="quiet">
+          <span data-icon="save"></span><span>Kaydet</span>
+        </button>
+        <div class="export-wrap">
+          <button id="export" class="primary" aria-expanded="false">
+            <span data-icon="camera"></span> Render al
+            <span data-icon="chevron"></span>
+          </button>
+          <div id="export-menu" class="menu" hidden>
+            <button id="png">
+              <span data-icon="image"></span> Görsel indir (PNG)</button
+            ><button id="video">
+              <span data-icon="video"></span> Animasyonu indir
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+    <main class="workspace">
+      <aside class="sidebar" aria-label="Sahne araçları">
+        <div class="panel-heading">
+          <h2>Nesne ekle</h2>
+          <span data-icon="plus"></span>
+        </div>
+        <div class="shape-grid">
+          <button id="add-box" class="shape">
+            <span class="shape-art box-art" data-icon="box"></span>Kutu</button
+          ><button id="add-sphere" class="shape">
+            <span class="shape-art sphere-art" data-icon="sphere"></span>Küre
+          </button>
+        </div>
+        <div class="scene-section">
+          <div class="panel-heading">
+            <h2>Sahne</h2>
+            <span id="object-count" class="count"></span>
+          </div>
+          <div
+            id="object-list"
+            class="object-list"
+            aria-label="Sahne nesneleri"
+          ></div>
+        </div>
+        <div class="scene-actions">
+          <button id="group" title="Seçilen nesneleri grupla">
+            <span data-icon="group"></span> Grupla</button
+          ><button
+            id="join"
+            title="Seçili ağları birleştir"
+            aria-label="Ağları birleştir"
+          >
+            <span data-icon="mesh"></span> Birleştir</button
+          ><button id="ungroup" title="Grubu çöz" aria-label="Grubu çöz">
+            <span data-icon="ungroup"></span> Grubu çöz</button
+          ><button id="delete" title="Seçimi sil" aria-label="Seçimi sil">
+            <span data-icon="trash"></span> Sil
+          </button>
+        </div>
+        <p class="selection-tip">
+          <kbd>Shift</kbd> ile birden fazla nesne seç.
+        </p>
+      </aside>
+      <section class="center" aria-label="3B çalışma alanı">
+        <div class="viewport-bar">
+          <h1>Sahne görünümü</h1>
+          <div class="viewport-actions">
+            <button
+              id="wireframe"
+              class="quiet"
+              aria-pressed="false"
+              title="Üçgen kenarlarını göster"
+            >
+              <span data-icon="mesh"></span><span>Tel kafes</span></button
+            ><button
+              id="reset-view"
+              class="quiet"
+              data-icon="focus"
+              title="Kamerayı sıfırla"
+              aria-label="Kamerayı sıfırla"
+            ></button>
+          </div>
+        </div>
+        <div id="viewport" class="viewport">
+          <div class="viewport-tag"><span></span> Perspektif</div>
+          <div class="tool-strip" aria-label="Dönüşüm araçları">
+            <button
+              data-mode="select"
+              data-icon="cursor"
+              aria-label="Seç"
+              title="Seç (Q)"
+            ></button
+            ><button
+              data-mode="translate"
+              data-icon="move"
+              aria-label="Taşı"
+              title="Taşı (G)"
+            ></button
+            ><button
+              data-mode="rotate"
+              data-icon="rotate"
+              aria-label="Döndür"
+              title="Döndür (R)"
+            ></button
+            ><button
+              data-mode="scale"
+              data-icon="scale"
+              aria-label="Ölçekle"
+              title="Ölçekle (S)"
+            ></button>
+          </div>
+          <div class="axis-widget" aria-hidden="true">
+            <span class="axis-y">Y</span><span class="axis-x">X</span
+            ><span class="axis-z">Z</span>
+          </div>
+          <div class="viewport-hint">
+            Sürükle <b>Döndür</b><i></i> Tekerlek <b>Yakınlaş</b><i></i> Sağ
+            sürükle <b>Kaydır</b>
+          </div>
+          <div id="engine-error" class="engine-error" hidden></div>
+        </div>
+        <section class="timeline" aria-label="Zaman çizelgesi">
+          <div class="timeline-top">
+            <h2><span data-icon="clock"></span>Zaman çizelgesi</h2>
+            <div class="playback">
+              <button
+                id="first"
+                data-icon="first"
+                aria-label="Başa dön"
+                title="Başa dön"
+              ></button>
+              <button
+                id="play"
+                data-icon="play"
+                aria-label="Oynat"
+                title="Oynat (Boşluk)"
+              ></button>
+              <button
+                id="last"
+                data-icon="last"
+                aria-label="Sona git"
+                title="Sona git"
+              ></button>
+            </div>
+            <div class="key-actions">
+              <button
+                id="add-key"
+                class="quiet key-button"
+                title="Seçili nesneye anahtar kare ekle"
+                aria-label="Anahtar kare ekle"
+              >
+                <span data-icon="diamond"></span><span>Anahtar ekle</span>
+              </button>
+              <button
+                id="remove-key"
+                class="quiet key-button"
+                data-icon="trash"
+                aria-label="Anahtar kareyi sil"
+                title="Anahtar kareyi sil"
+              ></button>
+            </div>
+          </div>
+          <div class="track-wrap">
+            <div class="track-caption">
+              <span data-icon="layers"></span><span id="track-name"></span>
+            </div>
+            <div class="track" id="track">
+              <div id="ticks" class="ticks"></div>
+              <div id="key-markers" class="key-markers"></div>
+              <div id="playhead" class="playhead"></div>
+              <input
+                id="scrub"
+                type="range"
+                min="0"
+                max="120"
+                value="0"
+                aria-label="Geçerli kare"
+              />
+            </div>
+          </div>
+          <div class="timeline-footer">
+            <label
+              >Kare <input id="frame" type="number" min="0" max="120" value="0"
+            /></label>
+            <label
+              >Son
+              <input id="duration" type="number" min="1" max="1800" value="120"
+            /></label>
+            <span>30 FPS</span>
+          </div>
+        </section>
+      </section>
+      <aside class="inspector" aria-label="Özellikler">
+        <div class="panel-heading">
+          <h2>Özellikler</h2>
+          <span data-icon="sliders"></span>
+        </div>
+        <div id="inspector-content"></div>
+      </aside>
+    </main>
+    <footer class="statusbar">
+      <span><i></i> <span id="status" role="status">Hazır</span></span
+      ><span id="mesh-count"></span>
+    </footer>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
