@@ -17,6 +17,23 @@ const options = (entries) =>
       ([value, label]) => '<option value="' + value + '">' + label + '</option>'
     )
     .join('');
+const vectorFields = (id, label) =>
+  axes
+    .map(
+      (axis) =>
+        '<label><b>' +
+        axis.toUpperCase() +
+        '</b><input type="number" aria-label="' +
+        label +
+        ' ' +
+        axis.toUpperCase() +
+        '" data-' +
+        id +
+        '="' +
+        axis +
+        '" min="-1000" max="1000" step="any"></label>'
+    )
+    .join('');
 
 export function settingsMarkup(object) {
   const type = object.userData.type;
@@ -62,9 +79,27 @@ export function settingsMarkup(object) {
         ? colorMarkup +
           '<label class="field" title="%0 düşük ama görünür güç, %100 yüksek parlaklık.">Işık gücü (%)<input id="light-power" type="number" min="0" max="100" step="any"></label>'
         : '') +
+    (object.isMesh
+      ? '<label class="check-field" title="Cisim parlar ve merkezine bağlı bir ışık çevresini aydınlatır."><input id="object-emits" type="checkbox"> Işık yay</label>' +
+        '<div id="emission-settings" hidden><label class="field">Yayılan ışık rengi<input id="emission-color" type="color"></label>' +
+        '<label class="field">Yayılan ışık gücü (%)<input id="emission-power" type="number" min="0" max="100"></label></div>'
+      : '') +
     '</div>' +
     (type === 'box'
-      ? '<div class="inspector-block"><h3>Geometri</h3><label class="field" title="Köşenin ne kadar yuvarlanacağını belirler. %0 keskin, %50 en yuvarlak köşedir.">Köşe yarıçapı (%)<input id="object-radius" type="number" min="0" max="50" step="1"></label>' +
+      ? '<div class="inspector-block"><h3>Geometri</h3><div class="field" title="Sadece seçtiğin eksene paralel kenarları yuvarlar. Örneğin Y düşey kenarlardır.">Kenar yuvarlama (%)<div class="axis-fields">' +
+        axes
+          .map(
+            (axis) =>
+              '<label><b>' +
+              axis.toUpperCase() +
+              '</b><input id="edge-radius-' +
+              axis +
+              '" aria-label="Kenar yuvarlama ' +
+              axis.toUpperCase() +
+              ' (%)" type="number" min="0" max="50" step="1"></label>'
+          )
+          .join('') +
+        '</div></div>' +
         '<label class="field" title="Yuvarlatılmış köşeleri oluşturan yüzey sayısı. Değer arttıkça köşe daha pürüzsüz görünür.">Köşe ayrıntısı<input id="object-segments" type="number" min="1" max="12" step="1"></label></div>'
       : '') +
     (type === 'sphere'
@@ -79,20 +114,14 @@ export function settingsMarkup(object) {
     '<div class="inspector-block"><h3>Animasyon</h3>' +
     '<label class="field" title="Özel bir sahne seçilirse nesne o animasyon seçiliyken görünür.">Nesnenin sahnesi<select id="scene-clip"></select></label>' +
     '<label class="field">Konum hareketi<select id="position-motion"><option value="keys">Karelerle hareket</option><option value="physics">Fiziksel ivme</option></select></label>' +
-    '<div id="physics-controls" hidden><div class="field" title="Dünya eksenleri. Cisim durgun başlar. Örneğin Y = -10 bir saniyede 5 metre aşağı hareket eder.">İvme (m/s²)<div class="axis-fields">' +
-    axes
-      .map(
-        (axis) =>
-          '<label><b>' +
-          axis.toUpperCase() +
-          '</b><input type="number" aria-label="İvme ' +
-          axis.toUpperCase() +
-          ' (m/s²)" data-acceleration="' +
-          axis +
-          '" min="-1000" max="1000" step="any"></label>'
-      )
-      .join('') +
-    '</div></div><p class="selection-tip">Hız grafiği bu modda dönüşü ve ölçeği etkiler.</p></div>' +
+    '<div id="physics-controls" hidden><div class="field" title="Dünya eksenlerindeki ivme sekmeden sonra da aynı kalır.">İvme (m/s²)<div class="axis-fields">' +
+    vectorFields('acceleration', 'İvme') +
+    '</div></div>' +
+    '<div class="field" title="Cismin başlarken sahip olduğu dünya ekseni hızı.">Başlangıç hızı (m/s)<div class="axis-fields">' +
+    vectorFields('velocity', 'Başlangıç hızı') +
+    '</div></div>' +
+    '<label class="field" title="Çarpışmada yüzeye dik hızın ters yönde korunan yüzdesi.">Sekme (%)<input id="object-bounce" type="number" min="0" max="100" step="any"></label>' +
+    '<p class="selection-tip">Hız grafiği bu modda dönüşü ve boyutu etkiler.</p></div>' +
     speedMarkup +
     '<label class="field" title="Kısa veya uzun dönüş yolunu seç. Bir eksende belirli yönde ya da tam tur dönmek için açıları izle seçeneğini kullan.">Dönüş yolu<select id="rotation-path">' +
     options(Object.entries(rotationPaths)) +
@@ -112,6 +141,7 @@ export function bindSettings(
     toggleSolid,
     collisionReady,
     pick,
+    highlight,
     status
   }
 ) {
@@ -197,17 +227,24 @@ export function bindSettings(
     setDetail(object, detail);
     return changed(object);
   }
-  if ($('object-radius')) {
-    number(
-      'object-radius',
-      () => data.radius * 100,
-      0,
-      50,
-      (value) => {
-        data.radius = value / 100;
-        return rebuild();
-      }
-    );
+  if ($('edge-radius-x')) {
+    for (const [index, axis] of axes.entries()) {
+      number(
+        'edge-radius-' + axis,
+        () => (data.edgeRadii?.[index] ?? data.radius) * 100,
+        0,
+        50,
+        (value) => {
+          data.edgeRadii ??= [data.radius, data.radius, data.radius];
+          data.radius = 0;
+          data.edgeRadii[index] = value / 100;
+          return rebuild();
+        }
+      );
+      const field = $('edge-radius-' + axis);
+      field.onfocus = field.onpointerenter = () => highlight(axis);
+      field.onblur = field.onpointerleave = () => highlight();
+    }
     number(
       'object-segments',
       () => data.segments,
@@ -244,6 +281,29 @@ export function bindSettings(
         object.intensity = 0.5 + 1.795 * value;
       }
     );
+  if ($('object-emits')) {
+    $('object-emits').checked = data.emitsLight;
+    $('emission-settings').hidden = !data.emitsLight;
+    $('object-emits').onchange = (event) =>
+      edit(() => {
+        data.emitsLight = event.target.checked;
+        $('emission-settings').hidden = !data.emitsLight;
+      });
+    $('emission-color').value = data.emissionColor;
+    $('emission-color').onchange = (event) =>
+      edit(() => {
+        data.emissionColor = event.target.value;
+      }, 'Yayılan ışık rengini değiştir');
+    number(
+      'emission-power',
+      () => data.emissionPower,
+      0,
+      100,
+      (value) => {
+        data.emissionPower = value;
+      }
+    );
+  }
   $('position-motion').value = data.positionMode;
   $('physics-controls').hidden = data.positionMode !== 'physics';
   $('position-motion').onchange = (event) => {
@@ -252,21 +312,36 @@ export function bindSettings(
     });
     $('physics-controls').hidden = data.positionMode !== 'physics';
   };
-  for (const [index, input] of [
-    ...panel.querySelectorAll('[data-acceleration]')
-  ].entries()) {
-    input.value = data.physicsAcceleration[index];
-    input.onchange = () => {
-      if (Number.isFinite(input.valueAsNumber))
-        setMotion(() => {
-          data.physicsAcceleration[index] = Math.min(
-            1000,
-            Math.max(-1000, input.valueAsNumber)
-          );
-        });
-      input.value = data.physicsAcceleration[index];
-    };
+  for (const [field, property] of [
+    ['acceleration', 'physicsAcceleration'],
+    ['velocity', 'initialVelocity']
+  ]) {
+    for (const [index, input] of [
+      ...panel.querySelectorAll('[data-' + field + ']')
+    ].entries()) {
+      input.value = data[property][index];
+      input.onchange = () => {
+        if (Number.isFinite(input.valueAsNumber))
+          setMotion(() => {
+            data[property][index] = Math.min(
+              1000,
+              Math.max(-1000, input.valueAsNumber)
+            );
+          });
+        input.value = data[property][index];
+      };
+    }
   }
+  $('object-bounce').value = data.restitution * 100;
+  $('object-bounce').onchange = (event) => {
+    const input = event.target;
+    if (Number.isFinite(input.valueAsNumber))
+      setMotion(() => {
+        data.restitution =
+          Math.min(100, Math.max(0, input.valueAsNumber)) / 100;
+      });
+    input.value = data.restitution * 100;
+  };
   bindSpeed(panel, data, edit, status);
   $('scene-clip').replaceChildren(
     new Option('Her animasyonda', ''),

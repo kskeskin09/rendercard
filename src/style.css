@@ -1121,3 +1121,87 @@ kbd {
     display: none;
   }
 }
+.edit-toast {
+  position: fixed;
+  z-index: 35;
+  top: 75px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(90vw, 540px);
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #272e24;
+  color: #f8faf4;
+  box-shadow: 0 3px 13px #0003;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.5s ease;
+}
+.edit-toast.warning {
+  background: #902c24;
+}
+.edit-toast.fading {
+  opacity: 0;
+}
+.inspector .setting-heading {
+  gap: 5px;
+}
+.inspector .setting-heading h3 {
+  margin-right: auto;
+}
+.inspector .inspector-toggle {
+  min-width: 27px;
+  width: 27px;
+  margin-top: 0;
+  padding: 0;
+  font-size: 16px;
+}
+.clip-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+}
+.clip-row > button {
+  color: #a13029;
+}
+.fog-menu-wrap {
+  position: relative;
+}
+.fog-menu-wrap summary {
+  padding: 5px 8px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 12px;
+}
+.fog-menu {
+  top: 31px;
+  min-width: 152px;
+  padding: 9px;
+}
+.fog-menu input:not([type='checkbox']) {
+  width: 100%;
+}
+#pick-color[aria-pressed='true'] {
+  background: #333f29;
+  color: #f5f7ed;
+  border-color: #1f2c18;
+}
+.color-hue-label input[type='range']::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    red,
+    yellow,
+    lime,
+    cyan,
+    blue,
+    magenta,
+    red
+  );
+  border-radius: 7px;
+}
+#color-tone {
+  float: right;
+  font-weight: 600;
+}

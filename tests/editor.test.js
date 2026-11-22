@@ -15,6 +15,7 @@ import {
   joinMeshes,
   makeObject,
   poseAt,
+  setDetail,
   writeKey
 } from '../src/model.js';
 import {
@@ -29,6 +30,7 @@ import { snapToGrid, surfaceOffset } from '../src/snapping.js';
 import { readColor } from '../src/color-editor.js';
 import { profileTime } from '../src/motion.js';
 import { chooseTrack, keysFor } from '../src/clips.js';
+import { trajectory } from '../src/dynamics.js';
 
 const close = (actual, expected) =>
   assert(Math.abs(actual - expected) < 0.0001, `${actual} != ${expected}`);
@@ -261,4 +263,69 @@ test('independent clip keys and playback selection survive a project round trip'
   assert.equal(keysFor(copy, id)[0].position[0], 7);
   poseAt(copy, 30, chooseTrack(copy, ['main', id], 30));
   close(copy.position.x, 8);
+});
+
+test('a bounce preserves the chosen normal speed fraction and gravity continues afterwards', () => {
+  const floor = (position, delta) => {
+    if (delta.y >= 0 || position.y + delta.y > 0) return undefined;
+    return {
+      time: Math.max(0, -position.y / delta.y),
+      normal: new Vector3(0, 1, 0)
+    };
+  };
+  const replay = trajectory(
+    new Vector3(0, 5, 0),
+    [2, 0, 0],
+    [0, -10, 0],
+    0.6,
+    floor
+  );
+  close(replay(30).y, 0);
+  close(replay(45).y, 1.75);
+  close(replay(48).y, 1.8);
+  close(replay(45).x, 3);
+  close(replay(45).y, 1.75);
+  const stopped = trajectory(
+    new Vector3(0, 5, 0),
+    [0, 0, 0],
+    [0, -10, 0],
+    0,
+    floor
+  );
+  close(stopped(150).y, 0);
+});
+
+test('one-axis edge rounding keeps the full thickness of that axis', () => {
+  const object = makeObject('box', 'Düşey kenarlar', '#fff000', 24, {
+    edgeRadii: [0, 0.4, 0]
+  });
+  const surface = object.geometry.attributes.position;
+  close(bounds(object).min.y, -0.5);
+  close(bounds(object).max.y, 0.5);
+  assert(
+    [...Array(surface.count).keys()].some(
+      (i) =>
+        Math.abs(surface.getY(i) - 0.5) < 0.0001 &&
+        surface.getX(i) > 0.3 &&
+        surface.getX(i) < 0.49 &&
+        surface.getZ(i) > 0.3 &&
+        surface.getZ(i) < 0.49
+    )
+  );
+});
+
+test('restoring a sharp solid edge detects the neighboring object before accepting the edit', async () => {
+  assert(await initializeCollisions());
+  const solid = makeObject('box', 'Yuvarlak', '#ffeeaa', 24, {
+    solid: true,
+    edgeRadii: [0, 0.45, 0]
+  });
+  const neighbor = makeObject('box', 'Köşe komşusu');
+  neighbor.scale.setScalar(0.095);
+  neighbor.position.set(0.465, 0, 0.465);
+  const root = new Group().add(solid, neighbor);
+  assert.deepEqual(overlaps(root, solid), []);
+  solid.userData.edgeRadii[1] = 0;
+  setDetail(solid, 24);
+  assert.deepEqual(overlaps(root, solid), [neighbor]);
 });

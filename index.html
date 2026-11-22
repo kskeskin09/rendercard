@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
+    <div id="edit-toast" class="edit-toast" role="status" hidden></div>
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" data-icon="layers"></span
@@ -157,6 +158,31 @@
         <div class="viewport-bar">
           <h1>Sahne görünümü</h1>
           <div class="viewport-actions">
+            <details class="fog-menu-wrap">
+              <summary class="quiet" title="Sahne sisi">Sis</summary>
+              <div class="menu fog-menu">
+                <label class="check-field"
+                  ><input id="fog-enabled" type="checkbox" /> Sis açık</label
+                >
+                <label class="field"
+                  >Sis rengi<input id="fog-color" type="color"
+                /></label>
+                <label class="field"
+                  >Başlangıç (m)<input
+                    id="fog-near"
+                    type="number"
+                    min="0"
+                    step="any"
+                /></label>
+                <label class="field"
+                  >Tam sis (m)<input
+                    id="fog-far"
+                    type="number"
+                    min="0.1"
+                    step="any"
+                /></label>
+              </div>
+            </details>
             <div class="export-wrap">
               <button
                 id="snap-settings"
@@ -248,8 +274,8 @@
             ><button
               data-mode="scale"
               data-icon="scale"
-              aria-label="Ölçekle"
-              title="Ölçekle (S)"
+              aria-label="Boyutlandır"
+              title="Boyutlandır (S)"
             ></button>
           </div>
           <div class="axis-widget" aria-hidden="true">
@@ -313,6 +339,9 @@
                     aria-label="Oynatılacak animasyonlar"
                   ></div>
                   <div class="clip-actions">
+                    <button id="clip-play-sequence" class="quiet">
+                      Sırayla oynat
+                    </button>
                     <button id="clip-select-all" class="quiet">
                       Hepsini seç</button
                     ><button id="clip-play-selected" class="quiet">

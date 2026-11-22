@@ -3,11 +3,11 @@ import { Color, SRGBColorSpace } from 'three';
 export const colorMarkup = `<div class="field">Renk<div class="color-row">
   <details class="color-editor"><summary title="Rengi ve sayı biçimini düzenle"><span class="color-swatch"></span><span id="color-display"></span></summary>
     <div class="color-spectrum" aria-label="Renk doygunluğu ve parlaklığı" title="Rengi seçmek için renk alanına tıkla veya sürükle"><span></span></div>
-    <label class="field color-hue-label">Ton<input id="color-hue" type="range" min="0" max="359" step="1"></label>
+    <label class="field color-hue-label"><span>Ton <output id="color-tone"></output></span><input id="color-hue" type="range" min="0" max="359" step="1"></label>
     <label class="field">Renk biçimi<select id="color-format"><option>HEX</option><option>RGB</option><option>HSL</option></select></label>
     <input id="object-color" aria-label="Renk değeri" spellcheck="false">
   </details>
-  <button id="pick-color" class="quiet" title="Sahnenin render renginden örnek al" aria-label="Sahneden renk seç">⌾</button>
+  <button id="pick-color" class="quiet" title="Sahnenin render renginden örnek al. İptal etmek için tekrar bas." aria-label="Sahneden renk seç" aria-pressed="false">⌾</button>
 </div></div>`;
 
 export function readColor(value, format) {
@@ -40,6 +40,7 @@ export function bindColor(panel, color, { edit, pick, status }) {
   const display = panel.querySelector('#color-display');
   const spectrum = panel.querySelector('.color-spectrum');
   const hue = panel.querySelector('#color-hue');
+  const tone = panel.querySelector('#color-tone');
   let saturation;
   let brightness;
   function showSpectrum() {
@@ -49,6 +50,7 @@ export function bindColor(panel, color, { edit, pick, status }) {
     );
     spectrum.firstElementChild.style.left = saturation * 100 + '%';
     spectrum.firstElementChild.style.top = (1 - brightness) * 100 + '%';
+    tone.textContent = hue.value + '°';
   }
   function refresh() {
     const hex = '#' + color.getHexString();
@@ -91,7 +93,12 @@ export function bindColor(panel, color, { edit, pick, status }) {
     brightness =
       1 - Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
     showSpectrum();
-    swatch.style.backgroundColor = '#' + spectrumColor().getHexString();
+    previewColor();
+  }
+  function previewColor() {
+    const hex = '#' + spectrumColor().getHexString();
+    swatch.style.backgroundColor = hex;
+    display.textContent = hex.toUpperCase();
   }
   spectrum.onpointerdown = (event) => {
     if (event.button !== 0) return;
@@ -104,7 +111,7 @@ export function bindColor(panel, color, { edit, pick, status }) {
   spectrum.onlostpointercapture = () => set(spectrumColor());
   hue.oninput = () => {
     showSpectrum();
-    swatch.style.backgroundColor = '#' + spectrumColor().getHexString();
+    previewColor();
   };
   hue.onchange = () => set(spectrumColor());
   format.onchange = refresh;

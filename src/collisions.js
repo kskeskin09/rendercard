@@ -1,6 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Box3, Matrix4, Quaternion, Vector3 } from 'three';
 import { geometry } from './model.js';
+import { hasKeys } from './clips.js';
 import { translateWorld } from './spatial.js';
 
 const tolerance = 0.00001;
@@ -40,7 +41,12 @@ function shapeFor(buffer, matrix, settings) {
     Math.abs(axes[0].dot(axes[1])) < tolerance &&
     Math.abs(axes[0].dot(axes[2])) < tolerance &&
     Math.abs(axes[1].dot(axes[2])) < tolerance;
-  if (orthogonal && settings.type === 'box' && !settings.radius) {
+  if (
+    orthogonal &&
+    settings.type === 'box' &&
+    !settings.radius &&
+    !settings.edgeRadii?.some(Boolean)
+  ) {
     const half = new Vector3(...lengths).multiplyScalar(0.5);
     const center = new Vector3().fromArray(settings.offset ?? [0, 0, 0]);
     position.add(center.applyMatrix4(linear));
@@ -249,6 +255,14 @@ export function sweep(root, moving, from) {
   const travel = parent
     .localToWorld(to.clone())
     .sub(parent.localToWorld(from.clone()));
+  const hit = castPairs(candidates, travel);
+  const time = hit ? Math.max(0, hit.time - tolerance / travel.length()) : 1;
+  moving.position.lerpVectors(from, to, time);
+  return hit?.object;
+}
+
+function castPairs(candidates, travel) {
+  let nearest;
   let time = 1;
   for (const { a, b } of candidates) {
     const swept = a.bounds.clone().union(a.bounds.clone().translate(travel));
@@ -267,13 +281,43 @@ export function sweep(root, moving, from) {
       time,
       false
     );
-    if (Number.isFinite(hit?.time_of_impact))
-      time = Math.max(
-        0,
-        Math.min(time, hit.time_of_impact - tolerance / travel.length())
-      );
+    if (Number.isFinite(hit?.time_of_impact) && hit.time_of_impact <= time) {
+      const normal = new Vector3()
+        .copy(hit.normal2)
+        .applyQuaternion(b.rotation)
+        .normalize();
+      if (travel.dot(normal) < -tolerance) {
+        time = Math.max(0, hit.time_of_impact);
+        nearest = { time, normal, object: b.object };
+      }
+    }
   }
-  moving.position.lerpVectors(from, to, time);
+  return nearest;
+}
+
+export function staticContacts(root, moving) {
+  const origin = moving.getWorldPosition(new Vector3());
+  const candidates = pairs(root, moving).filter(({ b }) => {
+    for (let node = b.object; node && node !== root; node = node.parent) {
+      if (hasKeys(node) || node.userData.positionMode === 'physics')
+        return false;
+    }
+    return true;
+  });
+  return (position, travel) => {
+    const offset = position.clone().sub(origin);
+    return castPairs(
+      candidates.map(({ a, b }) => ({
+        a: {
+          ...a,
+          position: a.position.clone().add(offset),
+          bounds: a.bounds.clone().translate(offset)
+        },
+        b
+      })),
+      travel
+    );
+  };
 }
 
 export function overlaps(root, object, any = false) {

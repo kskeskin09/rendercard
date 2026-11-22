@@ -24,6 +24,14 @@ import {
   rotationPaths
 } from './motion.js';
 import { profileTime, accelerationOffset } from './motion.js';
+import { roundedEdges } from './edge-geometry.js';
+
+export const defaultAtmosphere = {
+  enabled: false,
+  color: '#26322b',
+  near: 5,
+  far: 20
+};
 
 export const types = {
   box: 'Kutu',
@@ -33,7 +41,7 @@ export const types = {
   light: 'Işık'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 4;
+export const projectVersion = 5;
 const channels = ['position', 'rotation', 'scale'];
 
 const settingsDefaults = {
@@ -45,6 +53,12 @@ const settingsDefaults = {
   easeOut: 0,
   acceleration: 0,
   physicsAcceleration: [0, 0, 0],
+  initialVelocity: [0, 0, 0],
+  restitution: 0,
+  emitsLight: false,
+  emissionColor: '#fff1d9',
+  emissionPower: 35,
+  edgeRadii: null,
   positionMode: 'keys',
   physicsClip: 'main',
   sceneClip: null,
@@ -69,6 +83,11 @@ function settingsOf(data = {}) {
 export function geometry(type, detail = 24, settings = settingsDefaults) {
   let result;
   if (type === 'sphere') result = new SphereGeometry(0.5, detail, detail / 2);
+  else if (settings.edgeRadii?.some(Boolean))
+    result = roundedEdges(
+      settings.edgeRadii.map((value) => Math.min(0.499, value)),
+      settings.segments
+    );
   else if (settings.radius > 0) {
     const rounded = new RoundedBoxGeometry(
       1,
@@ -104,6 +123,17 @@ function configureMesh(object) {
   return object;
 }
 
+export function configurePointLight(light) {
+  light.castShadow = true;
+  light.shadow.mapSize.set(512, 512);
+  light.shadow.camera.near = 0.1;
+  light.shadow.camera.far = 35;
+  light.shadow.camera.updateProjectionMatrix();
+  light.shadow.bias = -0.0003;
+  light.shadow.normalBias = 0.025;
+  return light;
+}
+
 export function makeObject(
   type,
   name = types[type],
@@ -124,13 +154,7 @@ export function makeObject(
             )
           );
   if (object.isLight) {
-    object.castShadow = true;
-    object.shadow.mapSize.set(512, 512);
-    object.shadow.camera.near = 0.1;
-    object.shadow.camera.far = 35;
-    object.shadow.camera.updateProjectionMatrix();
-    object.shadow.bias = -0.0003;
-    object.shadow.normalBias = 0.025;
+    configurePointLight(object);
   }
   object.name = name;
   object.userData = { type, detail, keys: [], ...settings };
@@ -305,11 +329,12 @@ export function encodeObject(object) {
   };
 }
 
-export function encodeProject(root, duration, animations) {
+export function encodeProject(root, duration, animations, atmosphere) {
   return {
     version: projectVersion,
     duration,
     animations,
+    atmosphere,
     objects: root.children.map(encodeObject)
   };
 }
@@ -343,6 +368,23 @@ export function decodeProject(project) {
         data.segments >= 1 &&
         data.segments <= 12)) &&
     (data.solid == null || typeof data.solid === 'boolean') &&
+    (data.initialVelocity == null ||
+      (numericTuple(data.initialVelocity) &&
+        data.initialVelocity.every((value) => Math.abs(value) <= 1000))) &&
+    (data.restitution == null ||
+      (Number.isFinite(data.restitution) &&
+        data.restitution >= 0 &&
+        data.restitution <= 1)) &&
+    (data.emitsLight == null || typeof data.emitsLight === 'boolean') &&
+    (data.emissionColor == null ||
+      /^#[0-9a-f]{6}$/i.test(data.emissionColor)) &&
+    (data.emissionPower == null ||
+      (Number.isFinite(data.emissionPower) &&
+        data.emissionPower >= 0 &&
+        data.emissionPower <= 100)) &&
+    (data.edgeRadii == null ||
+      (numericTuple(data.edgeRadii) &&
+        data.edgeRadii.every((value) => value >= 0 && value <= 0.5))) &&
     (data.physicsAcceleration == null ||
       (numericTuple(data.physicsAcceleration) &&
         data.physicsAcceleration.every((value) => Math.abs(value) <= 1000))) &&
@@ -432,7 +474,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, projectVersion].includes(project?.version) ||
     !validFrame(project.duration) ||
     project.duration < 1 ||
     !Array.isArray(project.objects)
@@ -465,9 +507,21 @@ export function decodeProject(project) {
     !animations.enabled.every((id) => ids.has(id))
   )
     throw new Error('Geçersiz animasyon listesi');
+  const atmosphere = project.atmosphere ?? defaultAtmosphere;
+  if (
+    typeof atmosphere.enabled !== 'boolean' ||
+    !/^#[0-9a-f]{6}$/i.test(atmosphere.color) ||
+    !Number.isFinite(atmosphere.near) ||
+    !Number.isFinite(atmosphere.far) ||
+    atmosphere.near < 0 ||
+    atmosphere.far <= atmosphere.near
+  ) {
+    throw new Error('Geçersiz sis ayarı');
+  }
   return {
     duration: project.duration,
     animations: structuredClone(animations),
+    atmosphere: { ...atmosphere },
     objects: project.objects.map(decode)
   };
 }

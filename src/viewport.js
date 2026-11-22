@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { configurePointLight, materialsOf } from './model.js';
+import { localBounds } from './spatial.js';
 
 export function createViewport(
   element,
@@ -21,7 +23,6 @@ export function createViewport(
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#26322b');
-  scene.fog = new THREE.FogExp2('#26322b', 0.042);
   scene.add(root);
   const camera = new THREE.PerspectiveCamera(35, 1, 0.08, 160);
   const orbit = new OrbitControls(camera, renderer.domElement);
@@ -51,24 +52,94 @@ export function createViewport(
   grid.material.opacity = 0.48;
   scene.add(grid);
 
-  scene.add(new THREE.HemisphereLight('#eff6dc', '#657667', 2.05));
-  const sun = new THREE.DirectionalLight('#fff3da', 3.2);
-  sun.position.set(-4, 8, 5);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, {
-    left: -10,
-    right: 10,
-    top: 10,
-    bottom: -10,
-    far: 28
-  });
-  sun.shadow.normalBias = 0.028;
-  sun.shadow.bias = -0.0002;
-  scene.add(sun);
-  const rim = new THREE.DirectionalLight('#c3d9ff', 1.8);
-  rim.position.set(5, 4, -8);
-  scene.add(rim);
+  scene.add(new THREE.HemisphereLight('#eff6dc', '#b7c3b0', 2.2));
+  const emitters = new Map();
+  const edgeLine = new THREE.LineSegments(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({ depthTest: false })
+  );
+  edgeLine.geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(24, 3)
+  );
+  edgeLine.frustumCulled = false;
+  edgeLine.renderOrder = 13;
+  edgeLine.visible = false;
+  scene.add(edgeLine);
+  let highlighted;
+
+  function highlightEdges(object, axis) {
+    highlighted =
+      object && axis?.length === 1 && 'xyz'.includes(axis)
+        ? { object, axis }
+        : undefined;
+  }
+
+  function updateHighlightedEdges(clean) {
+    edgeLine.visible =
+      !clean && Boolean(highlighted && highlighted.object.visible);
+    if (!edgeLine.visible) return;
+    const { object, axis } = highlighted;
+    const bounds = localBounds(object);
+    if (bounds.isEmpty()) {
+      edgeLine.visible = false;
+      return;
+    }
+    const [a, b] = ['x', 'y', 'z'].filter((component) => component !== axis);
+    const attribute = edgeLine.geometry.attributes.position;
+    const point = new THREE.Vector3();
+    let i = 0;
+    for (const first of [bounds.min[a], bounds.max[a]]) {
+      for (const second of [bounds.min[b], bounds.max[b]]) {
+        for (const end of [bounds.min[axis], bounds.max[axis]]) {
+          point[a] = first;
+          point[b] = second;
+          point[axis] = end;
+          point.applyMatrix4(object.matrixWorld);
+          attribute.setXYZ(i++, point.x, point.y, point.z);
+        }
+      }
+    }
+    attribute.needsUpdate = true;
+    edgeLine.material.color.set(
+      { x: '#ff8582', y: '#93e473', z: '#79b5ff' }[axis]
+    );
+  }
+
+  function updateEmitters() {
+    const seen = new Set();
+    root.traverseVisible((object) => {
+      if (!object.isMesh || !object.userData.emitsLight) return;
+      seen.add(object);
+      const data = object.userData;
+      let light = emitters.get(object);
+      if (!light) {
+        light = configurePointLight(new THREE.PointLight());
+        emitters.set(object, light);
+        scene.add(light);
+      }
+      if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
+      object.geometry.boundingBox.getCenter(light.position);
+      object.localToWorld(light.position);
+      light.color.set(data.emissionColor);
+      light.intensity = 0.5 + data.emissionPower * 1.795;
+      object.castShadow = false;
+      for (const material of materialsOf(object)) {
+        material.emissive.set(data.emissionColor);
+        material.emissiveIntensity = 0.08 + data.emissionPower / 65;
+      }
+    });
+    for (const [object, light] of emitters) {
+      if (seen.has(object)) continue;
+      scene.remove(light);
+      light.dispose();
+      emitters.delete(object);
+      if (object.parent) {
+        object.castShadow = true;
+        for (const material of materialsOf(object)) material.emissive.set(0);
+      }
+    }
+  }
 
   let symmetricScale = false;
   renderer.domElement.addEventListener(
@@ -94,8 +165,13 @@ export function createViewport(
             .applyQuaternion(transform.worldQuaternionStart.clone().invert())
         : undefined;
     editing(direction, transform.axis);
+    if (transform.mode === 'scale')
+      highlightEdges(transform.object, transform.axis?.toLowerCase());
   });
-  transform.addEventListener('mouseUp', moved);
+  transform.addEventListener('mouseUp', () => {
+    highlightEdges();
+    moved();
+  });
 
   const outline = new THREE.BoxHelper(new THREE.Object3D(), '#d8f882');
   outline.material.transparent = true;
@@ -120,6 +196,7 @@ export function createViewport(
   let mode = 'select';
 
   function updateSelection(object, nextMode) {
+    highlightEdges();
     selected = object;
     mode = nextMode;
     if (!selected || mode === 'select') transform.detach();
@@ -156,6 +233,12 @@ export function createViewport(
     renderer.domElement.classList.toggle('sampling-color', Boolean(callback));
     samplePreview.hidden = true;
     previewPosition = undefined;
+    element.dispatchEvent(
+      new CustomEvent('rendercard-color-mode', {
+        detail: Boolean(callback),
+        bubbles: true
+      })
+    );
   }
 
   function sampleAt(clientX, clientY) {
@@ -301,6 +384,8 @@ export function createViewport(
 
   function render(clean = false) {
     orbit.update();
+    updateEmitters();
+    updateHighlightedEdges(clean);
     if (!clean && !orientation.equals(camera.quaternion)) {
       orientation.copy(camera.quaternion);
       inverseOrientation.copy(orientation).invert();
@@ -367,6 +452,18 @@ export function createViewport(
   return {
     render,
     pickColor,
+    toggleColor(callback) {
+      const active = !sampler;
+      pickColor(active ? callback : undefined);
+      return active;
+    },
+    setAtmosphere(settings) {
+      scene.fog = settings.enabled
+        ? new THREE.Fog(settings.color, settings.near, settings.far)
+        : null;
+      scene.background.set(settings.enabled ? settings.color : '#26322b');
+    },
+    highlightEdges,
     reset,
     captureCamera: () => ({
       position: camera.position.clone(),
