@@ -6,6 +6,8 @@ export function installPresets({
   current,
   insert,
   fromObject,
+  renameObject,
+  deleteObject,
   status
 }) {
   const $ = (id) => document.getElementById(id);
@@ -19,7 +21,7 @@ export function installPresets({
   } catch {
     records = [];
   }
-  let contextObject;
+  let target;
   let source;
   function showMenu(show) {
     $('preset-menu').hidden = !show;
@@ -31,6 +33,7 @@ export function installPresets({
         const button = document.createElement('button');
         button.textContent = record.name;
         button.title = record.name;
+        button.oncontextmenu = (event) => openContext(event, 'preset', record);
         button.onclick = () => {
           showMenu(false);
           try {
@@ -45,7 +48,12 @@ export function installPresets({
   }
   function openName(project, completesScene) {
     source = { project, completesScene };
-    $('preset-name').value = '';
+    showNameDialog('Preset olarak kaydet', 'Preset adı', '');
+  }
+  function showNameDialog(title, label, value) {
+    $('preset-title').textContent = title;
+    $('preset-name-label').textContent = label;
+    $('preset-name').value = value;
     $('preset-error').hidden = true;
     $('preset-dialog').showModal();
     $('preset-name').focus();
@@ -59,7 +67,25 @@ export function installPresets({
   $('cancel-preset').onclick = () => finish(false);
   $('object-to-preset').onclick = () => {
     $('object-menu').hidden = true;
-    if (contextObject) openName(fromObject(contextObject), false);
+    if (target?.kind === 'object') openName(fromObject(target.value), false);
+  };
+  $('context-rename').onclick = () => {
+    $('object-menu').hidden = true;
+    if (!target) return;
+    source = { ...target };
+    showNameDialog(
+      'Yeniden adlandır',
+      target.kind === 'preset' ? 'Preset adı' : 'Nesne adı',
+      target.value.name
+    );
+  };
+  $('context-delete').onclick = () => {
+    $('object-menu').hidden = true;
+    if (!target) return;
+    if (target.kind === 'object') deleteObject(target.value);
+    else if (saveRecords(records.filter((record) => record !== target.value))) {
+      status(target.value.name + ' preseti silindi.');
+    }
   };
   $('close-preset-dialog').onclick = () => $('preset-dialog').close();
   $('preset-form').onsubmit = (event) => {
@@ -71,8 +97,10 @@ export function installPresets({
       !name ||
       records.some(
         (record) =>
+          source.kind !== 'object' &&
+          record !== source.value &&
           record.name.toLocaleLowerCase('tr-TR') ===
-          name.toLocaleLowerCase('tr-TR')
+            name.toLocaleLowerCase('tr-TR')
       )
     ) {
       error.textContent = name
@@ -81,21 +109,42 @@ export function installPresets({
       error.hidden = false;
       return;
     }
-    const next = [...records, { name, project: source.project }];
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(next));
-    } catch {
+    if (source.kind === 'object') {
+      renameObject(source.value, name);
+      $('preset-dialog').close();
+      return;
+    }
+    const next =
+      source.kind === 'preset'
+        ? records.map((record) =>
+            record === source.value ? { ...record, name } : record
+          )
+        : [...records, { name, project: source.project }];
+    if (!saveRecords(next)) {
       error.textContent =
         'Preset kaydedilemedi. Uygulamanın depolama alanını kontrol et.';
       error.hidden = false;
       return;
     }
-    records = next;
-    paintMenu();
     $('preset-dialog').close();
     if (source.completesScene) finish(true);
-    status(name + ' presetlere kaydedildi.');
+    status(
+      source.kind === 'preset'
+        ? 'Preset adı değiştirildi.'
+        : name + ' presetlere kaydedildi.'
+    );
   };
+  function saveRecords(next) {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(next));
+    } catch {
+      status('Presetler kaydedilemedi.');
+      return false;
+    }
+    records = next;
+    paintMenu();
+    return true;
+  }
   document.addEventListener('click', (event) => {
     if (!event.target.closest('.preset-wrap')) showMenu(false);
     if (!event.target.closest('#object-menu')) $('object-menu').hidden = true;
@@ -107,22 +156,23 @@ export function installPresets({
     }
   });
   paintMenu();
+  function openContext(event, kind, value) {
+    event.preventDefault();
+    target = { kind, value };
+    const menu = $('object-menu');
+    $('object-to-preset').hidden = kind !== 'object';
+    menu.hidden = false;
+    const row = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX || row.left;
+    const y = event.clientY || row.bottom;
+    menu.style.left =
+      Math.max(0, Math.min(x, window.innerWidth - menu.offsetWidth - 6)) + 'px';
+    menu.style.top =
+      Math.max(0, Math.min(y, window.innerHeight - menu.offsetHeight - 6)) +
+      'px';
+    $(kind === 'object' ? 'object-to-preset' : 'context-rename').focus();
+  }
   return {
-    openContext(event, object) {
-      event.preventDefault();
-      contextObject = object;
-      const menu = $('object-menu');
-      menu.hidden = false;
-      const row = event.currentTarget.getBoundingClientRect();
-      const x = event.clientX || row.left;
-      const y = event.clientY || row.bottom;
-      menu.style.left =
-        Math.max(0, Math.min(x, window.innerWidth - menu.offsetWidth - 6)) +
-        'px';
-      menu.style.top =
-        Math.max(0, Math.min(y, window.innerHeight - menu.offsetHeight - 6)) +
-        'px';
-      $('object-to-preset').focus();
-    }
+    openContext: (event, object) => openContext(event, 'object', object)
   };
 }

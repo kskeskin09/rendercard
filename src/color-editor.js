@@ -7,8 +7,14 @@ export const colorMarkup = `<div class="field">Renk<div class="color-row">
     <label class="field">Renk biçimi<select id="color-format"><option>HEX</option><option>RGB</option><option>HSL</option></select></label>
     <input id="object-color" aria-label="Renk değeri" spellcheck="false">
   </details>
-  <button id="pick-color" class="quiet" title="Sahnenin render renginden örnek al. İptal etmek için tekrar bas." aria-label="Sahneden renk seç" aria-pressed="false">⌾</button>
+  <button id="pick-color" class="quiet scene-pick" title="Sahnenin render renginden örnek al. İptal etmek için tekrar bas." aria-label="Sahneden renk seç" aria-pressed="false">⌾</button>
 </div></div>`;
+
+export function fogColorMarkup() {
+  return colorMarkup
+    .replace('>Renk<div', '>Sis rengi<div')
+    .replace(/id="([^"]+)"/g, 'id="fog-$1"');
+}
 
 export function readColor(value, format) {
   if (format === 'HEX') {
@@ -33,14 +39,19 @@ export function readColor(value, format) {
     : new Color().setHSL(x, y, z, SRGBColorSpace);
 }
 
-export function bindColor(panel, color, { edit, pick, status }) {
-  const format = panel.querySelector('#color-format');
-  const input = panel.querySelector('#object-color');
+export function bindColor(
+  panel,
+  color,
+  { edit, pick, status, prefix = '', changed }
+) {
+  const field = (name) => panel.querySelector('#' + prefix + name);
+  const format = field('color-format');
+  const input = field('object-color');
   const swatch = panel.querySelector('.color-swatch');
-  const display = panel.querySelector('#color-display');
+  const display = field('color-display');
   const spectrum = panel.querySelector('.color-spectrum');
-  const hue = panel.querySelector('#color-hue');
-  const tone = panel.querySelector('#color-tone');
+  const hue = field('color-hue');
+  const tone = field('color-tone');
   let saturation;
   let brightness;
   function showSpectrum() {
@@ -76,7 +87,10 @@ export function bindColor(panel, color, { edit, pick, status }) {
     } else input.value = hex;
   }
   const set = (value) => {
-    edit(() => color.copy(value));
+    edit(() => {
+      color.copy(value);
+      changed?.();
+    });
     refresh();
   };
   function spectrumColor() {
@@ -123,7 +137,8 @@ export function bindColor(panel, color, { edit, pick, status }) {
       refresh();
     }
   };
-  panel.querySelector('#pick-color').onclick = () =>
-    pick((hex) => set(new Color(hex)));
+  const pickButton = field('pick-color');
+  pickButton.onclick = () => pick((hex) => set(new Color(hex)), pickButton);
   refresh();
+  return refresh;
 }

@@ -1,11 +1,11 @@
-import { applyTile, tiles } from './tiles.js';
+import { applyTile, setTileSize, tiles } from './tiles.js';
 import { changePivot, groundObject } from './spatial.js';
 import { setDetail } from './model.js';
 import { colorMarkup, bindColor } from './color-editor.js';
 import { rotationPaths } from './motion.js';
 import { speedMarkup, bindSpeed } from './speed-graph.js';
+import { axes, axisHeading, axisRow } from './inspector-grid.js';
 
-const axes = ['x', 'y', 'z'];
 const choices = [
   ['Sol', 'Orta', 'Sağ'],
   ['En alt', 'Orta', 'En üst'],
@@ -18,22 +18,18 @@ const options = (entries) =>
     )
     .join('');
 const vectorFields = (id, label) =>
-  axes
-    .map(
-      (axis) =>
-        '<label><b>' +
-        axis.toUpperCase() +
-        '</b><input type="number" aria-label="' +
-        label +
-        ' ' +
-        axis.toUpperCase() +
-        '" data-' +
-        id +
-        '="' +
-        axis +
-        '" min="-1000" max="1000" step="any"></label>'
-    )
-    .join('');
+  axes.map(
+    (axis) =>
+      '<input type="number" aria-label="' +
+      label +
+      ' ' +
+      axis.toUpperCase() +
+      '" data-' +
+      id +
+      '="' +
+      axis +
+      '" min="-1000" max="1000" step="any">'
+  );
 
 export function settingsMarkup(object) {
   const type = object.userData.type;
@@ -42,7 +38,11 @@ export function settingsMarkup(object) {
     '<div class="inspector-block"><h3>Yerleşim</h3>' +
     (type === 'light'
       ? ''
-      : '<label class="check-field" title="Katı yüzeylerden geçişi engeller. Açmak için nesneyi önce çakışmalardan ayır."><input id="object-solid" type="checkbox"> Katılık</label>') +
+      : (object.isCamera ? '<label class="check-field"><input id="camera-collisions" type="checkbox"> Katı cisimlerden etkilen</label>' : '') +
+        '<label id="solid-field" class="check-field" title="Katı yüzeylerden geçişi engeller. Açmak için nesneyi önce çakışmalardan ayır."><input id="object-solid" type="checkbox"> Katılık</label>') +
+    (!object.isLight && !object.isCamera
+      ? '<label class="check-field" title="Fiziksel ivme modunda Y = 0 yüzeyine temas ve sekme."><input id="ground-reaction" type="checkbox"> Zemine tepki verir</label>'
+      : '') +
     '<label class="field" title="Nesnenin alt kenarını veya seçili merkezini sahne zeminiyle hizalar.">Zemine bitiştir<select id="object-ground"><option value="">Bir nokta seç</option><option value="edge">En uç kenarı</option><option value="center">Merkezi</option></select></label>' +
     '<div class="field" title="Konum ve hizalama işlemlerinin referans noktası.">Merkez noktası<div class="axis-fields pivot-fields">' +
     axes
@@ -62,7 +62,14 @@ export function settingsMarkup(object) {
       })
       .join('') +
     '</div></div></div>' +
-    '<div class="inspector-block"><div class="setting-heading"><h3>Görünüm</h3><button id="object-visible" class="quiet" title="Nesneyi sahnede ve renderda göster veya gizle" aria-pressed="true"></button></div>' +
+    (object.isCamera ? '<div class="inspector-block"><h3>Kamera takibi</h3>' +
+      '<label class="field">Takip hedefi<select id="follow-target"></select></label>' +
+      '<div id="follow-settings" hidden><output id="follow-distance"></output>' +
+      '<button id="follow-rebase" class="quiet" title="Mevcut konumu yeni takip açısı ve mesafesi olarak kullan">Mesafeyi yeniden al</button></div></div>' : '') +
+    '<div class="inspector-block"><h3>Görünüm</h3>' +
+    (object.isMesh || type === 'group' ? '<div class="field">Opaklık (%)<div class="opacity-fields">' +
+      '<input id="object-opacity" aria-label="Opaklık (%)" type="number" min="0" max="100">' +
+      '<input id="opacity-range" aria-label="Opaklık kaydırıcısı" type="range" min="0" max="100"></div></div>' : '') +
     (primitive
       ? '<label class="field" title="Düz bir renk veya tekrarlanan bir desen seç.">Yüzey<select id="object-finish">' +
         options([
@@ -74,7 +81,7 @@ export function settingsMarkup(object) {
         '<div id="tile-settings" hidden><label class="field">Tile<select id="object-tile">' +
         options(Object.entries(tiles)) +
         '</select></label>' +
-        '<label class="field" title="1/4, desenin dörtte bir ölçeğe inmesi ve daha sık tekrarlanması demektir.">Tile ölçeği<span class="fraction">1 / <input id="object-tile-scale" aria-label="Tile ölçeği paydası" type="number" min="1" max="1000" step="any"></span></label></div>'
+        '<label class="field" title="%100, zemindeki bir ızgara karesi büyüklüğündedir. %200, her kenarı iki kat büyütür.">Tile boyutu (%)<input id="object-tile-scale" aria-label="Tile boyutu (%)" type="number" min="0.1" max="2000" step="any"></label></div>'
       : type === 'light'
         ? colorMarkup +
           '<label class="field" title="%0 düşük ama görünür güç, %100 yüksek parlaklık.">Işık gücü (%)<input id="light-power" type="number" min="0" max="100" step="any"></label>'
@@ -114,12 +121,14 @@ export function settingsMarkup(object) {
     '<div class="inspector-block"><h3>Animasyon</h3>' +
     '<label class="field" title="Özel bir sahne seçilirse nesne o animasyon seçiliyken görünür.">Nesnenin sahnesi<select id="scene-clip"></select></label>' +
     '<label class="field">Konum hareketi<select id="position-motion"><option value="keys">Karelerle hareket</option><option value="physics">Fiziksel ivme</option></select></label>' +
-    '<div id="physics-controls" hidden><div class="field" title="Dünya eksenlerindeki ivme sekmeden sonra da aynı kalır.">İvme (m/s²)<div class="axis-fields">' +
-    vectorFields('acceleration', 'İvme') +
-    '</div></div>' +
-    '<div class="field" title="Cismin başlarken sahip olduğu dünya ekseni hızı.">Başlangıç hızı (m/s)<div class="axis-fields">' +
-    vectorFields('velocity', 'Başlangıç hızı') +
-    '</div></div>' +
+    '<div id="physics-controls" hidden><div class="axis-table">' +
+    axisHeading() +
+    axisRow('İvme <small>m/s²</small>', vectorFields('acceleration', 'İvme')) +
+    axisRow(
+      'Başlangıç hızı <small>m/s</small>',
+      vectorFields('velocity', 'Başlangıç hızı')
+    ) +
+    '</div>' +
     '<label class="field" title="Çarpışmada yüzeye dik hızın ters yönde korunan yüzdesi.">Sekme (%)<input id="object-bounce" type="number" min="0" max="100" step="any"></label>' +
     '<p class="selection-tip">Hız grafiği bu modda dönüşü ve boyutu etkiler.</p></div>' +
     speedMarkup +
@@ -139,6 +148,9 @@ export function bindSettings(
     sceneChanged,
     changed,
     toggleSolid,
+    followOptions,
+    setFollow,
+    collisionChanged,
     collisionReady,
     pick,
     highlight,
@@ -147,6 +159,13 @@ export function bindSettings(
 ) {
   const $ = (id) => panel.querySelector('#' + id);
   const data = object.userData;
+  if ($('ground-reaction')) {
+    $('ground-reaction').checked = data.reactsToGround;
+    $('ground-reaction').onchange = (event) =>
+      edit(() => {
+        data.reactsToGround = event.target.checked;
+      }, 'Zemin tepkisini değiştir');
+  }
   if ($('object-solid')) {
     $('object-solid').checked = data.solid;
     $('object-solid').disabled = !collisionReady;
@@ -155,6 +174,35 @@ export function bindSettings(
       edit(() => toggleSolid(object, input.checked));
       input.checked = data.solid;
     };
+  }
+  if ($('camera-collisions')) {
+    const check = $('camera-collisions');
+    const repaint = () => {
+      check.checked = data.affectsSolids;
+      $('solid-field').hidden = !data.affectsSolids;
+      $('object-solid').checked = data.solid;
+    };
+    check.onchange = () => edit(() => {
+      data.affectsSolids = check.checked;
+      if (!check.checked) data.solid = false;
+      repaint();
+      if (data.affectsSolids && changed(object) === false) return false;
+      collisionChanged();
+    }, 'Kamera çarpışmasını değiştir');
+    repaint();
+  }
+  if ($('follow-target')) {
+    const picker = $('follow-target');
+    picker.replaceChildren(new Option('Takip kapalı', ''), ...followOptions.map(target => new Option(target.name, target.userData.objectId)));
+    function repaintFollow() {
+      picker.value = data.followTarget ?? '';
+      $('follow-settings').hidden = !data.followOffset;
+      const distance = data.followOffset ? Math.hypot(...data.followOffset) : 0;
+      $('follow-distance').textContent = 'Takip mesafesi ' + distance.toLocaleString('tr-TR', { maximumFractionDigits: 2 }) + ' m';
+    }
+    picker.onchange = () => { setFollow(picker.value); repaintFollow(); };
+    $('follow-rebase').onclick = () => { setFollow(picker.value); repaintFollow(); };
+    repaintFollow();
   }
   $('object-ground').onchange = (event) => {
     const select = event.target;
@@ -166,17 +214,21 @@ export function bindSettings(
       });
     select.value = '';
   };
-  function visibility() {
-    $('object-visible').textContent = data.hidden ? 'Gizli' : 'Görünür';
-    $('object-visible').setAttribute('aria-pressed', String(!data.hidden));
+  if ($('object-opacity')) {
+    const input = $('object-opacity');
+    const range = $('opacity-range');
+    input.value = range.value = data.opacity;
+    const commit = value => {
+      edit(() => { data.opacity = value; delete object.previewOpacity; }, 'Opaklığı değiştir');
+      range.value = input.value = value;
+    };
+    range.oninput = () => {
+      object.previewOpacity = range.valueAsNumber;
+      input.value = range.value;
+    };
+    range.onchange = () => commit(range.valueAsNumber);
+    input.onchange = () => commit(Number.isFinite(input.valueAsNumber) ? Math.min(100, Math.max(0, input.valueAsNumber)) : data.opacity);
   }
-  visibility();
-  $('object-visible').onclick = () =>
-    edit(() => {
-      data.hidden = !data.hidden;
-      object.visible = !data.hidden && object.clipActive !== false;
-      visibility();
-    });
   for (const [index, select] of [
     ...panel.querySelectorAll('[data-pivot]')
   ].entries()) {
@@ -214,12 +266,12 @@ export function bindSettings(
       });
     number(
       'object-tile-scale',
-      () => 1 / data.tileScale,
-      1,
-      1000,
+      () => data.tileScale * 100,
+      0.1,
+      2000,
       (value) => {
-        data.tileScale = 1 / value;
-        object.material.map?.repeat.setScalar(value);
+        data.tileScale = value / 100;
+        setTileSize(object.material, data.tileScale);
       }
     );
   }

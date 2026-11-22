@@ -3,11 +3,12 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { configurePointLight, materialsOf } from './model.js';
 import { localBounds } from './spatial.js';
+import { updateOpacity } from './opacity.js';
 
 export function createViewport(
   element,
   root,
-  { select, editing, change, moved }
+  { select, context, editing, change, moved }
 ) {
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
@@ -25,6 +26,9 @@ export function createViewport(
   scene.background = new THREE.Color('#26322b');
   scene.add(root);
   const camera = new THREE.PerspectiveCamera(35, 1, 0.08, 160);
+  const shot = new THREE.PerspectiveCamera(35, 1, 0.08, 160);
+  let shotObject;
+  let previewShot = false;
   const orbit = new OrbitControls(camera, renderer.domElement);
   orbit.enableDamping = true;
   orbit.minDistance = 1;
@@ -53,6 +57,26 @@ export function createViewport(
   scene.add(grid);
 
   scene.add(new THREE.HemisphereLight('#eff6dc', '#b7c3b0', 2.2));
+  const defaultLights = new THREE.Group();
+  const sun = new THREE.DirectionalLight('#fff3da', 3.2);
+  sun.position.set(-4, 8, 5);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, {
+    left: -10,
+    right: 10,
+    top: 10,
+    bottom: -10,
+    far: 28
+  });
+  sun.shadow.normalBias = 0.028;
+  sun.shadow.bias = -0.0002;
+  sun.shadow.camera.updateProjectionMatrix();
+  const rim = new THREE.DirectionalLight('#c3d9ff', 1.8);
+  rim.position.set(5, 4, -8);
+  defaultLights.add(sun, rim);
+  defaultLights.visible = false;
+  scene.add(defaultLights);
   const emitters = new Map();
   const edgeLine = new THREE.LineSegments(
     new THREE.BufferGeometry(),
@@ -122,7 +146,8 @@ export function createViewport(
       object.geometry.boundingBox.getCenter(light.position);
       object.localToWorld(light.position);
       light.color.set(data.emissionColor);
-      light.intensity = 0.5 + data.emissionPower * 1.795;
+      const opacity = object.previewOpacity ?? data.opacity;
+      light.intensity = (0.5 + data.emissionPower * 1.795) * opacity / 100;
       object.castShadow = false;
       for (const material of materialsOf(object)) {
         material.emissive.set(data.emissionColor);
@@ -242,7 +267,7 @@ export function createViewport(
   }
 
   function sampleAt(clientX, clientY) {
-    render(true);
+    render(true, previewShot, false);
     const canvas = renderer.domElement;
     const rect = canvas.getBoundingClientRect();
     const x = Math.max(
@@ -322,12 +347,23 @@ export function createViewport(
     { capture: true }
   );
   renderer.domElement.addEventListener('pointerdown', (event) => {
-    if (event.isPrimary && event.button === 0 && !transform.axis)
-      down = [event.clientX, event.clientY];
+    if (
+      event.isPrimary &&
+      (event.button === 2 || (event.button === 0 && !transform.axis))
+    )
+      down = [event.clientX, event.clientY, event.button];
     else down = undefined;
   });
+  renderer.domElement.addEventListener('contextmenu', (event) =>
+    event.preventDefault()
+  );
   renderer.domElement.addEventListener('pointerup', (event) => {
-    if (!event.isPrimary || event.button !== 0 || !down || transform.dragging)
+    if (
+      !event.isPrimary ||
+      !down ||
+      event.button !== down[2] ||
+      transform.dragging
+    )
       return;
     const distance = Math.hypot(
       event.clientX - down[0],
@@ -340,8 +376,11 @@ export function createViewport(
       (2 * (event.clientX - rect.left)) / rect.width - 1,
       1 - (2 * (event.clientY - rect.top)) / rect.height
     );
-    ray.setFromCamera(pointer, camera);
-    const light = ray.intersectObject(lightMarkers)[0];
+    ray.setFromCamera(pointer, activeCamera(previewShot));
+    const light =
+      previewShot && shotObject
+        ? undefined
+        : ray.intersectObject(lightMarkers)[0];
     const hit = ray
       .intersectObjects(root.children, true)
       .find(({ object, face }) => {
@@ -352,7 +391,10 @@ export function createViewport(
           object.material[face?.materialIndex]?.visible !== false
         );
       });
-    select(light ? visibleLights[light.index] : hit?.object, event.shiftKey);
+    const object = light ? visibleLights[light.index] : hit?.object;
+    if (event.button === 2) {
+      if (object) context?.(event, object);
+    } else select(object, event.shiftKey);
   });
   renderer.domElement.addEventListener('pointercancel', () => {
     down = undefined;
@@ -382,12 +424,34 @@ export function createViewport(
   const inverseOrientation = new THREE.Quaternion();
   const point = new THREE.Vector3();
 
-  function render(clean = false) {
+  function activeCamera(useShot) {
+    if (!(useShot && shotObject)) return camera;
+    shotObject.getWorldPosition(shot.position);
+    shotObject.getWorldQuaternion(shot.quaternion);
+    shot.aspect = camera.aspect;
+    shot.updateProjectionMatrix();
+    shot.updateMatrixWorld();
+    return shot;
+  }
+
+  function render(clean = false, useShot = clean || previewShot, includeHidden = clean) {
     orbit.update();
+    const restore = [];
+    root.traverse(object => {
+      if (object === root) return;
+      const { hidden, opacity } = object.userData;
+      const visible = object.clipActive !== false && (includeHidden || !hidden) && (object.previewOpacity ?? opacity ?? 100) > 0;
+      if (object.visible !== visible) {
+        restore.push([object, object.visible]);
+        object.visible = visible;
+      }
+      updateOpacity(object, includeHidden);
+    });
+    const renderCamera = activeCamera(useShot);
     updateEmitters();
     updateHighlightedEdges(clean);
-    if (!clean && !orientation.equals(camera.quaternion)) {
-      orientation.copy(camera.quaternion);
+    if (!clean && !orientation.equals(renderCamera.quaternion)) {
+      orientation.copy(renderCamera.quaternion);
       inverseOrientation.copy(orientation).invert();
       for (const { label, direction } of axes) {
         point.copy(direction).applyQuaternion(inverseOrientation);
@@ -397,22 +461,29 @@ export function createViewport(
       }
     }
     grid.visible = !clean;
-    transformHelper.visible = !clean && Boolean(transform.object);
+    transformHelper.visible =
+      !clean && (!useShot || !shotObject) && Boolean(transform.object);
     outline.visible =
-      !clean && Boolean(selected && !selected.isLight && selected.visible);
+      !clean &&
+      Boolean(
+        selected && !selected.isLight && !selected.isCamera && selected.visible
+      );
     if (outline.visible) outline.setFromObject(selected);
     pivots.visible = !clean && showPivots;
-    lightMarkers.visible = !clean;
+    lightMarkers.visible = !clean && (!useShot || !shotObject);
     if (!clean) {
       const positions = [];
       const lights = [];
       visibleLights.length = 0;
       root.updateMatrixWorld();
       root.traverseVisible((object) => {
-        if (object !== root && (pivots.visible || object.isLight)) {
+        if (
+          object !== root &&
+          (pivots.visible || object.isLight || object.isCamera)
+        ) {
           point.setFromMatrixPosition(object.matrixWorld);
           if (pivots.visible) positions.push(point.x, point.y, point.z);
-          if (object.isLight) {
+          if (object.isLight || object.isCamera) {
             visibleLights.push(object);
             lights.push(point.x, point.y, point.z);
           }
@@ -421,7 +492,8 @@ export function createViewport(
       updateMarkers(lightMarkers, lights);
       if (pivots.visible) updateMarkers(pivots, positions);
     }
-    renderer.render(scene, camera);
+    renderer.render(scene, renderCamera);
+    for (const [object, visible] of restore) object.visible = visible;
   }
 
   function updateMarkers(markers, positions) {
@@ -462,6 +534,18 @@ export function createViewport(
         ? new THREE.Fog(settings.color, settings.near, settings.far)
         : null;
       scene.background.set(settings.enabled ? settings.color : '#26322b');
+      defaultLights.visible = settings.defaultLight;
+    },
+    setShot(object, preview) {
+      shotObject = object;
+      previewShot = preview;
+      orbit.enabled = !(preview && object) && !transform.dragging;
+      transform.enabled = !(preview && object);
+    },
+    copyDefaultCamera(object) {
+      orbit.update();
+      object.position.copy(camera.position);
+      object.quaternion.copy(camera.quaternion);
     },
     highlightEdges,
     reset,
@@ -470,8 +554,13 @@ export function createViewport(
       target: orbit.target.clone()
     }),
     restoreCamera(state) {
-      camera.position.copy(state.position);
-      orbit.target.copy(state.target);
+      if (Array.isArray(state.position)) {
+        camera.position.fromArray(state.position);
+        orbit.target.fromArray(state.target);
+      } else {
+        camera.position.copy(state.position);
+        orbit.target.copy(state.target);
+      }
       orbit.update();
     },
     showPivots: (value) => {

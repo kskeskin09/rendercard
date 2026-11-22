@@ -5,6 +5,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   PointLight,
+  PerspectiveCamera,
   SphereGeometry,
   MathUtils,
   Vector3
@@ -25,8 +26,10 @@ import {
 } from './motion.js';
 import { profileTime, accelerationOffset } from './motion.js';
 import { roundedEdges } from './edge-geometry.js';
+import { updateOpacity } from './opacity.js';
 
 export const defaultAtmosphere = {
+  defaultLight: false,
   enabled: false,
   color: '#26322b',
   near: 5,
@@ -38,16 +41,25 @@ export const types = {
   sphere: 'Küre',
   group: 'Grup',
   mesh: 'Ağ',
-  light: 'Işık'
+  light: 'Işık',
+  camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 5;
+export const projectVersion = 6;
 const channels = ['position', 'rotation', 'scale'];
 
 const settingsDefaults = {
   radius: 0,
   segments: 4,
   solid: false,
+  reactsToGround: true,
+  linkedSize: false,
+  cameraId: null,
+  objectId: null,
+  affectsSolids: true,
+  followTarget: null,
+  followOffset: null,
+  opacity: 100,
   hidden: false,
   easeIn: 0,
   easeOut: 0,
@@ -82,19 +94,25 @@ function settingsOf(data = {}) {
 
 export function geometry(type, detail = 24, settings = settingsDefaults) {
   let result;
+  const radii = settings.edgeRadii;
+  const equalRadii = radii && radii.every((value) => value === radii[0]);
+  const uniformRadius = equalRadii ? radii[0] : settings.radius;
   if (type === 'sphere') result = new SphereGeometry(0.5, detail, detail / 2);
-  else if (settings.edgeRadii?.some(Boolean))
+  else if (uniformRadius === 0.5 && (equalRadii || !radii)) {
+    const resolution = Math.max(24, settings.segments * 8);
+    result = new SphereGeometry(0.5, resolution, resolution / 2);
+  } else if (radii?.some(Boolean) && !equalRadii)
     result = roundedEdges(
       settings.edgeRadii.map((value) => Math.min(0.499, value)),
       settings.segments
     );
-  else if (settings.radius > 0) {
+  else if (uniformRadius > 0) {
     const rounded = new RoundedBoxGeometry(
       1,
       1,
       1,
       settings.segments,
-      settings.radius
+      uniformRadius
     );
     result = mergeVertices(rounded);
     rounded.dispose();
@@ -147,19 +165,26 @@ export function makeObject(
       ? new Group()
       : type === 'light'
         ? new PointLight(color, data?.intensity ?? 18)
-        : configureMesh(
-            new Mesh(
-              geometry(type, detail, settings),
-              material(color, settings)
-            )
-          );
+        : type === 'camera'
+          ? new PerspectiveCamera(35, 1, 0.08, 160)
+          : configureMesh(
+              new Mesh(
+                geometry(type, detail, settings),
+                material(color, settings)
+              )
+            );
   if (object.isLight) {
     configurePointLight(object);
   }
   object.name = name;
   object.userData = { type, detail, keys: [], ...settings };
+  object.userData.objectId ??= crypto.randomUUID();
+  if (object.isCamera && !settings.cameraId)
+    object.userData.cameraId = crypto.randomUUID();
   object.userData.tracks = {};
+  if (object.isCamera && !object.userData.affectsSolids) object.userData.solid = false;
   object.visible = !settings.hidden;
+  updateOpacity(object);
   return object;
 }
 
@@ -185,7 +210,9 @@ function makeJoinedMesh(parts, name = 'Birleşik ağ', data) {
   );
   mesh.name = name;
   mesh.userData = { type: 'mesh', keys: [], tracks: {}, parts, ...settings };
+  mesh.userData.objectId ??= crypto.randomUUID();
   mesh.visible = !settings.hidden;
+  updateOpacity(mesh);
   return mesh;
 }
 
@@ -201,6 +228,7 @@ export function joinMeshes(objects) {
       return object.userData.parts.map((part) => ({
         ...part,
         hidden: object.userData.hidden || part.hidden === true,
+        opacity: ((part.opacity ?? 100) * object.userData.opacity) / 100,
         matrix: new Matrix4()
           .fromArray(part.matrix)
           .premultiply(matrix)
@@ -247,6 +275,8 @@ export function disposeObject(object) {
       material.map?.dispose();
       material.dispose();
     });
+    child.customDepthMaterial?.dispose();
+    child.customDistanceMaterial?.dispose();
   });
   object.removeFromParent();
 }
@@ -329,12 +359,19 @@ export function encodeObject(object) {
   };
 }
 
-export function encodeProject(root, duration, animations, atmosphere) {
+export function encodeProject(
+  root,
+  duration,
+  animations,
+  atmosphere,
+  defaultView
+) {
   return {
     version: projectVersion,
     duration,
     animations,
     atmosphere,
+    defaultView,
     objects: root.children.map(encodeObject)
   };
 }
@@ -368,6 +405,11 @@ export function decodeProject(project) {
         data.segments >= 1 &&
         data.segments <= 12)) &&
     (data.solid == null || typeof data.solid === 'boolean') &&
+    (data.reactsToGround == null || typeof data.reactsToGround === 'boolean') &&
+    (data.linkedSize == null || typeof data.linkedSize === 'boolean') &&
+    (data.affectsSolids == null || typeof data.affectsSolids === 'boolean') &&
+    (data.opacity == null || (Number.isFinite(data.opacity) && data.opacity >= 0 && data.opacity <= 100)) &&
+    (data.followOffset == null || numericTuple(data.followOffset)) &&
     (data.initialVelocity == null ||
       (numericTuple(data.initialVelocity) &&
         data.initialVelocity.every((value) => Math.abs(value) <= 1000))) &&
@@ -427,6 +469,9 @@ export function decodeProject(project) {
     Array.isArray(part.matrix) &&
     part.matrix.length === 16 &&
     part.matrix.every(Number.isFinite);
+  const cameraIds = new Set();
+  const objectIds = new Set();
+  const validObjectId = id => typeof id === 'string' && /^[a-z0-9-]{1,64}$/i.test(id);
   function validate(data, depth) {
     if (
       !data ||
@@ -435,6 +480,8 @@ export function decodeProject(project) {
       typeof data.name !== 'string' ||
       !validPose(data) ||
       !validSettings(data) ||
+      (data.objectId != null && (!validObjectId(data.objectId) || objectIds.has(data.objectId))) ||
+      (data.followTarget != null && !validObjectId(data.followTarget)) ||
       !validKeys(data.keys) ||
       !Array.isArray(data.children) ||
       (data.tracks != null &&
@@ -445,6 +492,10 @@ export function decodeProject(project) {
           ))) ||
       (data.restPose != null && !validPose(data.restPose)) ||
       (data.type !== 'group' && data.children.length > 0) ||
+      (data.type === 'camera' &&
+        (typeof data.cameraId !== 'string' ||
+          !/^[a-z0-9-]{1,64}$/i.test(data.cameraId) ||
+          cameraIds.has(data.cameraId))) ||
       (data.type === 'light' &&
         (!/^#[0-9a-f]{6}$/i.test(data.color) ||
           !Number.isFinite(data.intensity) ||
@@ -458,6 +509,8 @@ export function decodeProject(project) {
     ) {
       throw new Error('Geçersiz nesne');
     }
+    if (data.type === 'camera') cameraIds.add(data.cameraId);
+    if (data.objectId != null) objectIds.add(data.objectId);
     data.children.forEach((child) => validate(child, depth + 1));
   }
   function decode(data) {
@@ -474,7 +527,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, projectVersion].includes(project?.version) ||
     !validFrame(project.duration) ||
     project.duration < 1 ||
     !Array.isArray(project.objects)
@@ -507,9 +560,28 @@ export function decodeProject(project) {
     !animations.enabled.every((id) => ids.has(id))
   )
     throw new Error('Geçersiz animasyon listesi');
-  const atmosphere = project.atmosphere ?? defaultAtmosphere;
+  if (
+    animations.cameraTracks != null &&
+    (typeof animations.cameraTracks !== 'object' ||
+      Array.isArray(animations.cameraTracks) ||
+      !Object.entries(animations.cameraTracks).every(
+        ([id, track]) =>
+          ids.has(id) &&
+          Array.isArray(track) &&
+          track.every(
+            (key, index) =>
+              key &&
+              validFrame(key.frame) &&
+              (index === 0 || track[index - 1].frame < key.frame) &&
+              (key.camera === null || cameraIds.has(key.camera))
+          )
+      ))
+  )
+    throw new Error('Geçersiz kamera kareleri');
+  const atmosphere = { ...defaultAtmosphere, ...project.atmosphere };
   if (
     typeof atmosphere.enabled !== 'boolean' ||
+    typeof atmosphere.defaultLight !== 'boolean' ||
     !/^#[0-9a-f]{6}$/i.test(atmosphere.color) ||
     !Number.isFinite(atmosphere.near) ||
     !Number.isFinite(atmosphere.far) ||
@@ -518,10 +590,18 @@ export function decodeProject(project) {
   ) {
     throw new Error('Geçersiz sis ayarı');
   }
+  const defaultView = project.defaultView;
+  if (
+    defaultView != null &&
+    (!numericTuple(defaultView.position) || !numericTuple(defaultView.target))
+  ) {
+    throw new Error('Geçersiz varsayılan kamera');
+  }
   return {
     duration: project.duration,
     animations: structuredClone(animations),
     atmosphere: { ...atmosphere },
+    defaultView: defaultView && structuredClone(defaultView),
     objects: project.objects.map(decode)
   };
 }

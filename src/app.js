@@ -1,4 +1,4 @@
-import { Box3, Group, MathUtils, Vector3 } from 'three';
+import { Box3, Color, Group, MathUtils, Vector3 } from 'three';
 import { createViewport } from './viewport.js';
 import { icon } from './icons.js';
 import {
@@ -33,6 +33,14 @@ import { installPresets } from './presets.js';
 import { snapToGrid, snapToSurfaces } from './snapping.js';
 import { trajectory } from './dynamics.js';
 import { chooseTrack, hasKeys, keysFor, mainClip, posesOf } from './clips.js';
+import { cameraAt, writeCameraKey } from './camera-track.js';
+import { bindColor, fogColorMarkup } from './color-editor.js';
+import {
+  axes,
+  axisHeading,
+  axisRow,
+  constrainDimensions
+} from './inspector-grid.js';
 
 const $ = (id) => document.getElementById(id);
 const all = (selector) => [...document.querySelectorAll(selector)];
@@ -64,6 +72,11 @@ let animations = {
   enabled: ['main']
 };
 const openInspectorSections = new Set(['Dönüşüm']);
+const inspectorPositions = new WeakMap();
+let paintedInspector;
+let previewCamera = false;
+let cameraOverride;
+let activePicker;
 
 function status(message) {
   $('status').textContent = message;
@@ -212,6 +225,8 @@ function describeEdit(before, after) {
 }
 
 function commitEdit(before, description) {
+  updateSceneVisibility();
+  updateFollowers();
   const after = captureScene();
   if (before.project !== after.project) {
     resetPhysics();
@@ -257,6 +272,10 @@ function settleObject(object, from) {
     warnOverlap(overlap);
     return false;
   }
+  if (from && object.isCamera) {
+    const target = getObjectById(object.userData.followTarget);
+    if (target) captureFollowOffset(object, target);
+  }
   updateExistingKey(object);
   fitParentPivots(object);
 }
@@ -272,7 +291,12 @@ function positionPhysics(object, source, startFrame) {
     const castSolid = collisions?.staticContacts(root, object);
     const cast = (position, delta) => {
       let hit = castSolid?.(position, delta);
-      if (Number.isFinite(bottom) && bottom >= -0.00001 && delta.y < 0) {
+      if (
+        object.userData.reactsToGround &&
+        Number.isFinite(bottom) &&
+        bottom >= -0.00001 &&
+        delta.y < 0
+      ) {
         const gap = bottom + position.y - origin.y;
         const floorTime = Math.max(0, -gap / delta.y);
         if (gap + delta.y <= 0 && floorTime <= (hit?.time ?? 1)) {
@@ -305,6 +329,7 @@ function poseScene(continuous = false) {
   forObjects((object) => {
     if (!inActiveScene(object)) return;
     const data = object.userData;
+    if (object.isCamera && data.followTarget && data.followOffset) return;
     const keys = chooseTrack(object, animations.enabled, frame);
     const physical =
       data.positionMode === 'physics' &&
@@ -346,6 +371,8 @@ function select(object, extend = false) {
 }
 
 function setMode(next) {
+  if (next === 'scale' && (single()?.isCamera || single()?.isLight))
+    next = 'select';
   mode = next;
   all('[data-mode]').forEach((button) =>
     button.setAttribute('aria-pressed', button.dataset.mode === mode)
@@ -358,6 +385,7 @@ for (const element of all('[data-icon]'))
 
 function frameTo(next, continuous = false) {
   frame = Math.min(duration, Math.max(0, Math.round(next)));
+  cameraOverride = undefined;
   poseScene(continuous);
   refreshFrame();
   refreshTransform();
@@ -371,6 +399,11 @@ function refreshFrame() {
   $('remove-key').disabled = ![...selected].some((object) =>
     keysFor(object, animations.active).some((key) => key.frame === frame)
   );
+  $('camera-choice').value = cameraAt(animations, frame) ?? '';
+  $('remove-camera-key').disabled = !animations.cameraTracks?.[
+    animations.active
+  ]?.some((key) => key.frame === frame);
+  updateCameraView();
 }
 
 function setPlaying(value) {
@@ -383,6 +416,7 @@ function setPlaying(value) {
     if (frame >= duration) frameTo(0);
     startedAt = performance.now() - (frame * 1000) / fps;
   }
+  updateCameraView();
 }
 
 function stopAt(next) {
@@ -392,6 +426,7 @@ function stopAt(next) {
 
 function updateTimeline() {
   paintAtmosphere();
+  paintCameraChoices();
   $('scrub').max = duration;
   $('frame').max = duration;
   $('duration').value = duration;
@@ -424,7 +459,7 @@ function updateTimeline() {
       forObjects((object) =>
         keysFor(object, clip.id).forEach((key) => frames.add(key.frame))
       );
-      return [...frames]
+      const objectMarkers = [...frames]
         .filter((value) => value <= duration)
         .map((value) => {
           const marker = document.createElement('span');
@@ -434,10 +469,117 @@ function updateTimeline() {
           marker.style.left = (value / duration) * 100 + '%';
           return marker;
         });
+      const cameraMarkers = (animations.cameraTracks?.[clip.id] ?? [])
+        .filter((key) => key.frame <= duration)
+        .map((key) => {
+          const marker = document.createElement('span');
+          marker.className = 'key-dot camera-dot';
+          marker.style.top = 25 + lane * 20 + 'px';
+          marker.style.left = (key.frame / duration) * 100 + '%';
+          marker.title =
+            (getCamera(key.camera)?.name ?? 'Varsayılan') + ' · ' + key.frame;
+          return marker;
+        });
+      return [...objectMarkers, ...cameraMarkers];
     })
   );
   refreshFrame();
 }
+
+function getCamera(id) {
+  if (!id) return undefined;
+  let result;
+  forObjects((object) => {
+    if (object.isCamera && object.userData.cameraId === id) result = object;
+  });
+  return result;
+}
+
+function getObjectById(id) {
+  if (!id) return undefined;
+  let result;
+  forObjects(object => { if (object.userData.objectId === id) result = object; });
+  return result;
+}
+
+function followTargets(camera) {
+  const targets = [];
+  forObjects(object => {
+    if (!object.isMesh && object.userData.type !== 'group') return;
+    for (let node = camera; node; node = node.parent) if (node === object) return;
+    targets.push(object);
+  });
+  return targets;
+}
+
+function captureFollowOffset(camera, target) {
+  const offset = camera.getWorldPosition(new Vector3()).sub(target.getWorldPosition(new Vector3()));
+  if (offset.lengthSq() < 0.000001) offset.set(0, 0, 1).applyQuaternion(camera.getWorldQuaternion(camera.quaternion.clone()));
+  camera.userData.followOffset = offset.toArray();
+}
+
+function updateFollowers() {
+  forObjects(camera => {
+    const data = camera.userData;
+    if (!camera.isCamera || !data.followTarget || !data.followOffset || !inActiveScene(camera)) return;
+    const target = getObjectById(data.followTarget);
+    if (!target || !inActiveScene(target)) return;
+    const center = target.getWorldPosition(new Vector3());
+    const desired = new Vector3().fromArray(data.followOffset).add(center);
+    const position = data.affectsSolids && collisions ? collisions.followCamera(root, camera, desired) : desired;
+    camera.position.copy(camera.parent.worldToLocal(position.clone()));
+    camera.lookAt(center);
+  });
+}
+
+function paintCameraChoices() {
+  const options = [new Option('Varsayılan', '')];
+  forObjects((object) => {
+    if (object.isCamera)
+      options.push(new Option(object.name, object.userData.cameraId));
+  });
+  $('camera-choice').replaceChildren(...options);
+}
+
+function updateCameraView() {
+  updateFollowers();
+  const preview = previewCamera || playing || recording;
+  const useOverride =
+    previewCamera && !playing && !recording && cameraOverride !== undefined;
+  const camera = getCamera(
+    useOverride ? cameraOverride : cameraAt(animations, frame)
+  );
+  view?.setShot(camera, preview);
+  $('viewport-camera-name').textContent =
+    preview && camera ? camera.name : 'Varsayılan';
+}
+
+$('camera-choice').onchange = (event) => {
+  cameraOverride = event.target.value || null;
+  updateCameraView();
+};
+$('preview-camera').onclick = () => {
+  previewCamera = !previewCamera;
+  $('preview-camera').setAttribute('aria-pressed', String(previewCamera));
+  cameraOverride = previewCamera ? $('camera-choice').value || null : undefined;
+  updateCameraView();
+};
+$('add-camera-key').onclick = () =>
+  edit(() => {
+    writeCameraKey(animations, frame, $('camera-choice').value || null);
+    cameraOverride = undefined;
+    updateTimeline();
+  }, 'Kamera karesi ekle');
+$('remove-camera-key').onclick = () =>
+  edit(() => {
+    const track = animations.cameraTracks?.[animations.active];
+    if (track)
+      animations.cameraTracks[animations.active] = track.filter(
+        (key) => key.frame !== frame
+      );
+    cameraOverride = undefined;
+    updateTimeline();
+  }, 'Kamera karesini sil');
 
 function paintClips() {
   const active = $('clip-active');
@@ -484,6 +626,7 @@ function paintClips() {
 }
 
 function removeClip(id) {
+  if (animations.cameraTracks) delete animations.cameraTracks[id];
   const replacement = animations.clips.find((clip) => clip.id !== id) ?? {
     ...mainClip
   };
@@ -520,9 +663,9 @@ function inActiveScene(object) {
 
 function updateSceneVisibility() {
   forObjects((object) => {
-    const { sceneClip, hidden } = object.userData;
+    const { sceneClip, hidden, opacity } = object.userData;
     object.clipActive = !sceneClip || animations.enabled.includes(sceneClip);
-    object.visible = object.clipActive && !hidden;
+    object.visible = object.clipActive && !hidden && (opacity ?? 100) > 0;
   });
 }
 
@@ -608,9 +751,12 @@ function nextClip() {
 }
 
 const dismissMenus = (target) => {
-  for (const menu of all('.clip-menu-wrap, .fog-menu-wrap, .color-editor')) {
+  for (const menu of all(
+    '.clip-menu-wrap, .fog-menu-wrap, .camera-menu-wrap, .color-editor'
+  )) {
     if (!target || !menu.contains(target)) menu.open = false;
   }
+  if (!target || !$('view-camera-menu').contains(target)) $('view-camera-menu').hidden = true;
 };
 document.addEventListener(
   'pointerdown',
@@ -621,22 +767,55 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') dismissMenus();
 });
 document.addEventListener('rendercard-color-mode', (event) => {
-  $('pick-color')?.setAttribute('aria-pressed', String(event.detail));
+  if (activePicker)
+    activePicker.setAttribute('aria-pressed', String(event.detail));
+  if (!event.detail) activePicker = undefined;
+});
+
+function pickSceneColor(callback, button) {
+  setPlaying(false);
+  if (activePicker && activePicker !== button) view?.pickColor(undefined);
+  activePicker = button;
+  const active = view?.toggleColor(callback);
+  status(
+    active
+      ? 'Sahnede renk almak istediğin noktaya tıkla.'
+      : 'Renk seçimi iptal edildi.'
+  );
+  return active;
+}
+
+const fogPalette = $('fog-palette');
+fogPalette.innerHTML = fogColorMarkup();
+const fogColor = new Color(atmosphere.color);
+const refreshFogColor = bindColor(fogPalette, fogColor, {
+  prefix: 'fog-',
+  edit: (callback) => edit(callback, 'Sis rengini değiştir'),
+  pick: pickSceneColor,
+  status,
+  changed: () => {
+    atmosphere.color = '#' + fogColor.getHexString();
+    view?.setAtmosphere(atmosphere);
+  }
 });
 
 function paintAtmosphere() {
   $('fog-enabled').checked = atmosphere.enabled;
-  $('fog-color').value = atmosphere.color;
+  fogColor.set(atmosphere.color);
+  refreshFogColor();
   $('fog-near').value = atmosphere.near;
   $('fog-far').value = atmosphere.far;
+  $('default-light').setAttribute(
+    'aria-pressed',
+    String(atmosphere.defaultLight)
+  );
   view?.setAtmosphere(atmosphere);
 }
-for (const field of ['enabled', 'color', 'near', 'far']) {
+for (const field of ['enabled', 'near', 'far']) {
   $('fog-' + field).onchange = (event) =>
     edit(() => {
       const input = event.currentTarget;
       if (field === 'enabled') atmosphere.enabled = input.checked;
-      else if (field === 'color') atmosphere.color = input.value;
       else if (Number.isFinite(input.valueAsNumber)) {
         atmosphere[field] =
           field === 'near'
@@ -646,6 +825,11 @@ for (const field of ['enabled', 'color', 'near', 'far']) {
       paintAtmosphere();
     }, 'Sisi düzenle');
 }
+$('default-light').onclick = () =>
+  edit(() => {
+    atmosphere.defaultLight = !atmosphere.defaultLight;
+    paintAtmosphere();
+  }, 'Varsayılan ışığı değiştir');
 
 function paintList() {
   const rows = [];
@@ -654,7 +838,6 @@ function paintList() {
     const type = object.userData.type;
     const row = document.createElement('button');
     row.className = 'object-row' + (selected.has(object) ? ' selected' : '');
-    row.style.paddingLeft = 7 + depth * 12 + 'px';
     row.setAttribute('aria-pressed', selected.has(object));
     row.title = object.name;
     row.innerHTML =
@@ -662,11 +845,34 @@ function paintList() {
       icon(type) +
       '</span><span class="row-name"></span><span class="row-type">' +
       types[type] +
-      '</span>';
+      '</span><span class="object-badges"></span>';
     row.querySelector('.row-name').textContent = object.name;
+    row.querySelector('.object-badges').innerHTML =
+      (object.userData.hidden
+        ? '<span title="Gizli" aria-label="Gizli">' + icon('eyeOff') + '</span>'
+        : '') +
+      (object.userData.solid
+        ? '<span class="solid-badge" title="Katı" aria-label="Katı">S</span>'
+        : '');
     row.onclick = (event) => select(object, event.shiftKey);
     row.oncontextmenu = (event) => presets.openContext(event, object);
-    rows.push(row);
+    const entry = document.createElement('div');
+    entry.className = 'object-entry';
+    entry.style.paddingLeft = depth * 10 + 'px';
+    const visibility = document.createElement('button');
+    visibility.className = 'object-eye';
+    visibility.title = object.userData.hidden ? 'Önizlemede göster' : 'Önizlemede gizle';
+    visibility.setAttribute('aria-label', visibility.title + ' · ' + object.name);
+    visibility.setAttribute('aria-pressed', String(!object.userData.hidden));
+    visibility.innerHTML = icon(object.userData.hidden ? 'eyeOff' : 'eye');
+    visibility.onclick = () => edit(() => {
+      object.userData.hidden = !object.userData.hidden;
+      updateSceneVisibility();
+      paintList();
+    }, 'Önizleme görünürlüğünü değiştir');
+    visibility.oncontextmenu = (event) => presets.openContext(event, object);
+    entry.append(visibility, row);
+    rows.push(entry);
     if (object.isMesh) triangles += object.geometry.index.count / 3;
     object.children.forEach((child) => rowFor(child, depth + 1));
   }
@@ -678,6 +884,12 @@ function paintList() {
 
 const fields = { position: 'Konum', rotation: 'Dönüş (°)', scale: 'Boyut' };
 
+function dimensionStep() {
+  return $('snap-grid').checked
+    ? MathUtils.clamp($('snap-step').valueAsNumber || 1, 0.001, 100)
+    : 0;
+}
+
 function unscaledSize(object) {
   if (object.isMesh) {
     if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
@@ -688,43 +900,53 @@ function unscaledSize(object) {
 function paintInspector() {
   const object = single();
   const panel = $('inspector-content');
+  const scroller = panel.closest('.inspector');
+  if (paintedInspector)
+    inspectorPositions.set(paintedInspector, scroller.scrollTop);
+  paintedInspector = object;
   if (!object) {
     panel.innerHTML = '<p class="empty"></p>';
     panel.firstChild.textContent = selected.size
       ? selected.size + ' nesne seçili. Birlikte düzenlemek için grupla.'
       : 'Düzenlemek için bir nesne seç.';
+    scroller.scrollTop = 0;
     return;
   }
   panel.innerHTML =
     '<div class="inspector-block"><label class="field">Nesne adı<input id="object-name" maxlength="80"></label></div>' +
-    '<div class="inspector-block"><h3>Dönüşüm</h3>' +
+    '<div class="inspector-block"><h3>Dönüşüm</h3><div class="axis-table">' +
+    axisHeading(
+      !object.isLight && !object.isCamera
+        ? '<button id="link-size" class="quiet" aria-label="Boyut oranlarını bağla" title="Boyut oranlarını bağla">' +
+            icon('link') +
+            '</button>'
+        : ''
+    ) +
     Object.entries(fields)
-      .filter(([channel]) => !object.isLight || channel === 'position')
-      .map(
-        ([channel, title]) =>
-          '<div class="field">' +
-          title +
-          '<div class="axis-fields">' +
-          ['x', 'y', 'z']
-            .map(
-              (axis) =>
-                '<label><b>' +
-                axis.toUpperCase() +
-                '</b><input type="number" inputmode="decimal" step="any" aria-label="' +
-                title +
-                ' ' +
-                axis.toUpperCase() +
-                '" data-transform="' +
-                channel +
-                '" data-axis="' +
-                axis +
-                '"></label>'
-            )
-            .join('') +
-          '</div></div>'
+      .filter(([channel]) =>
+        object.isLight
+          ? channel === 'position'
+          : !object.isCamera || channel !== 'scale'
+      )
+      .map(([channel, title]) =>
+        axisRow(
+          title,
+          axes.map(
+            (axis) =>
+              '<input type="number" inputmode="decimal" step="any" aria-label="' +
+              title +
+              ' ' +
+              axis.toUpperCase() +
+              '" data-transform="' +
+              channel +
+              '" data-axis="' +
+              axis +
+              '">'
+          )
+        )
       )
       .join('') +
-    '</div>' +
+    '</div></div>' +
     settingsMarkup(object) +
     '<button id="inspector-delete" class="danger-button">Cismi sil</button>';
   for (const block of panel.querySelectorAll('.inspector-block')) {
@@ -763,6 +985,17 @@ function paintInspector() {
     update();
   }
   $('inspector-delete').onclick = () => edit(deleteSelection);
+  if ($('link-size')) {
+    const button = $('link-size');
+    const paint = () =>
+      button.setAttribute('aria-pressed', String(object.userData.linkedSize));
+    button.onclick = () =>
+      edit(() => {
+        object.userData.linkedSize = !object.userData.linkedSize;
+        paint();
+      }, 'Boyut oranı kilidini değiştir');
+    paint();
+  }
   const name = $('object-name');
   name.value = object.name;
   name.onchange = () =>
@@ -808,7 +1041,19 @@ function paintInspector() {
               : channel === 'rotation'
                 ? MathUtils.degToRad(value)
                 : value;
-          if (bounds) anchorScale(object, position, scale, bounds, symmetric);
+          if (bounds) {
+            object.scale.copy(
+              constrainDimensions(
+                scale,
+                object.scale,
+                bounds.getSize(new Vector3()),
+                [axis],
+                object.userData.linkedSize,
+                dimensionStep()
+              )
+            );
+            anchorScale(object, position, scale, bounds, symmetric);
+          }
           return settleObject(
             object,
             channel === 'position' ? position : undefined
@@ -836,16 +1081,17 @@ function paintInspector() {
       }),
     status,
     highlight: (axis) => view?.highlightEdges(axis ? object : undefined, axis),
-    pick: (callback) => {
-      setPlaying(false);
-      const active = view?.toggleColor(callback);
-      status(
-        active
-          ? 'Sahnede renk almak istediğin noktaya tıkla.'
-          : 'Renk seçimi iptal edildi.'
-      );
-      return active;
-    },
+    pick: pickSceneColor,
+    followOptions: object.isCamera ? followTargets(object) : [],
+    collisionChanged: paintList,
+    setFollow: (id) => edit(() => {
+      const target = followTargets(object).find(item => item.userData.objectId === id);
+      object.userData.followTarget = target?.userData.objectId ?? null;
+      object.userData.followOffset = null;
+      if (target) captureFollowOffset(object, target);
+      updateCameraView();
+      refreshTransform();
+    }, 'Kamera takibini değiştir'),
     collisionReady: Boolean(collisions),
     changed: (changedObject, from) => {
       if (changedObject && settleObject(changedObject, from) === false)
@@ -862,17 +1108,20 @@ function paintInspector() {
         return;
       }
       solid.userData.solid = value;
+      paintList();
       status(value ? 'Katılık açıldı.' : 'Katılık kapatıldı.');
       refreshTransform();
     }
   });
   refreshTransform();
+  scroller.scrollTop = inspectorPositions.get(object) ?? 0;
 }
 
 function refreshTransform() {
   const object = single();
   if (!object) return;
-  const size = object.isLight ? undefined : unscaledSize(object);
+  const size =
+    object.isLight || object.isCamera ? undefined : unscaledSize(object);
   for (const input of all('[data-transform]')) {
     if (input === document.activeElement && input.value !== '' && playing)
       continue;
@@ -981,9 +1230,25 @@ presets = installPresets({
   fromObject: (object) => ({
     version: projectVersion,
     duration,
-    animations,
+    animations: {
+      clips: animations.clips,
+      active: animations.active,
+      enabled: animations.enabled
+    },
     objects: [encodeObject(object)]
   }),
+  renameObject(object, name) {
+    edit(() => {
+      object.name = name;
+      refresh();
+    }, 'Adı değiştir');
+  },
+  deleteObject(object) {
+    edit(() => {
+      select(object);
+      deleteSelection();
+    }, 'Cismi sil');
+  },
   insert(record) {
     const project = decodeProject(record.project);
     if (!project.objects.length) return;
@@ -994,7 +1259,24 @@ presets = installPresets({
           animations.enabled.push(clip.id);
         }
       }
-      for (const object of project.objects) root.add(object);
+      const idMap = new Map();
+      for (const object of project.objects) {
+        object.traverse((child) => {
+          const oldId = child.userData.objectId;
+          child.userData.objectId = crypto.randomUUID();
+          idMap.set(oldId, child.userData.objectId);
+          if (child.isCamera) child.userData.cameraId = crypto.randomUUID();
+        });
+      }
+      for (const object of project.objects) {
+        object.traverse(child => {
+          if (child.isCamera) {
+            child.userData.followTarget = idMap.get(child.userData.followTarget) ?? null;
+            if (!child.userData.followTarget) child.userData.followOffset = null;
+          }
+        });
+        root.add(object);
+      }
       const object =
         project.objects.length === 1
           ? project.objects[0]
@@ -1044,6 +1326,7 @@ function addObject(type) {
     type === 'light' ? 3 : 0.5,
     1.7
   );
+  if (object.isCamera) view?.copyDefaultCamera(object);
   if (object.isMesh) object.material.wireframe = wireframe;
   root.add(object);
   updateSceneVisibility();
@@ -1058,8 +1341,26 @@ function deleteSelection() {
   if (!selected.size) return;
   setPlaying(false);
   const targets = independentSelection();
+  const removedCameras = new Set();
+  const removedObjects = new Set();
+  for (const target of targets)
+    target.traverse((object) => {
+      removedObjects.add(object.userData.objectId);
+      if (object.isCamera) removedCameras.add(object.userData.cameraId);
+    });
+  for (const keys of Object.values(animations.cameraTracks ?? {})) {
+    for (const key of keys)
+      if (removedCameras.has(key.camera)) key.camera = null;
+  }
+  if (removedCameras.has(cameraOverride)) cameraOverride = undefined;
   const parents = new Set(targets.map((object) => object.parent));
   targets.forEach(disposeObject);
+  forObjects(object => {
+    if (removedObjects.has(object.userData.followTarget)) {
+      object.userData.followTarget = null;
+      object.userData.followOffset = null;
+    }
+  });
   for (const parent of parents) {
     if (parent === root) continue;
     fitPivot(parent);
@@ -1120,6 +1421,7 @@ for (const button of all('[data-align]')) {
 $('add-box').onclick = () => edit(() => addObject('box'));
 $('add-sphere').onclick = () => edit(() => addObject('sphere'));
 $('add-light').onclick = () => edit(() => addObject('light'));
+$('add-camera').onclick = () => edit(() => addObject('camera'));
 $('group').onclick = () => {
   if (!canGroup()) return;
   setPlaying(false);
@@ -1169,8 +1471,36 @@ $('ungroup').onclick = () => {
 $('delete').onclick = () => edit(deleteSelection);
 $('wireframe').onclick = () => setWireframe(!wireframe);
 $('reset-view').onclick = () => {
+  $('view-camera-menu').hidden = true;
+  setPlaying(false);
+  previewCamera = false;
+  cameraOverride = undefined;
+  $('preview-camera').setAttribute('aria-pressed', 'false');
   view?.reset();
+  updateCameraView();
   status('Kamera sıfırlandı.');
+};
+$('reset-view').oncontextmenu = (event) => {
+  event.preventDefault();
+  const menu = $('view-camera-menu');
+  const choices = [null];
+  forObjects(object => { if (object.isCamera) choices.push(object); });
+  menu.replaceChildren(...choices.map(object => {
+    const button = document.createElement('button');
+    button.textContent = object?.name ?? 'Varsayılan';
+    button.onclick = () => {
+      menu.hidden = true;
+      setPlaying(false);
+      previewCamera = Boolean(object);
+      cameraOverride = object?.userData.cameraId;
+      $('preview-camera').setAttribute('aria-pressed', String(previewCamera));
+      updateCameraView();
+    };
+    return button;
+  }));
+  menu.hidden = false;
+  menu.style.left = Math.max(0, Math.min(event.clientX, window.innerWidth - menu.offsetWidth - 5)) + 'px';
+  menu.style.top = Math.max(0, Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 5)) + 'px';
 };
 $('show-pivots').onclick = () => {
   const show = $('show-pivots').getAttribute('aria-pressed') !== 'true';
@@ -1287,8 +1617,18 @@ async function saveOutput(blob, name, label) {
 }
 
 $('save').onclick = () => {
+  const viewPose = view?.captureCamera();
   const content = JSON.stringify(
-    encodeProject(root, duration, animations, atmosphere),
+    encodeProject(
+      root,
+      duration,
+      animations,
+      atmosphere,
+      viewPose && {
+        position: viewPose.position.toArray(),
+        target: viewPose.target.toArray()
+      }
+    ),
     null,
     2
   );
@@ -1311,6 +1651,8 @@ $('project-file').onchange = async (event) => {
       duration = project.duration;
       animations = project.animations;
       atmosphere = project.atmosphere;
+      if (project.defaultView) view?.restoreCamera(project.defaultView);
+      cameraOverride = undefined;
       sequence = undefined;
       updateSceneVisibility();
       selected.clear();
@@ -1360,6 +1702,7 @@ async function recordVideo() {
   forObjects((object) => poses.set(object, capture(object)));
   setPlaying(false);
   recording = true;
+  updateCameraView();
   const workspace = document.querySelector('.workspace');
   const actions = document.querySelector('.top-actions');
   workspace.inert = true;
@@ -1370,6 +1713,7 @@ async function recordVideo() {
     const { blob, name } = await encodeVideo(view, duration, fps, (next) => {
       frame = next;
       poseScene(frame > 0);
+      updateCameraView();
       if (frame % 10 === 0)
         status('Animasyon hazırlanıyor · ' + frame + ' / ' + duration);
     });
@@ -1444,6 +1788,7 @@ populate();
 try {
   view = createViewport($('viewport'), root, {
     select,
+    context: (event, object) => presets.openContext(event, object),
     editing: (direction, axis) => {
       const object = single();
       if (!object) return;
@@ -1465,8 +1810,16 @@ try {
       const object = single();
       if (!drag || !object) return;
       if (mode === 'scale') {
-        for (const axis of ['x', 'y', 'z'])
-          object.scale[axis] = Math.max(0.001, object.scale[axis]);
+        object.scale.copy(
+          constrainDimensions(
+            drag.scale,
+            object.scale,
+            drag.bounds.getSize(new Vector3()),
+            drag.axes,
+            object.userData.linkedSize,
+            dimensionStep()
+          )
+        );
         anchorScale(
           object,
           drag.position,
@@ -1497,6 +1850,11 @@ try {
       }
       drag.last.copy(object.position);
       drag.lastPose = capture(object);
+      if (mode === 'translate' && object.isCamera) {
+        const target = getObjectById(object.userData.followTarget);
+        if (target) captureFollowOffset(object, target);
+      }
+      updateFollowers();
       refreshTransform();
     },
     moved: () => {
@@ -1518,6 +1876,28 @@ try {
   status('3B görünüm kullanılamıyor.');
 }
 refresh();
+const hint = document.querySelector('.viewport-hint');
+const introTimer = setTimeout(
+  () => hint.classList.remove('hint-visible'),
+  4200
+);
+let idleTimer = setTimeout(() => hint.classList.add('hint-visible'), 60000);
+function activity() {
+  clearTimeout(introTimer);
+  hint.classList.remove('hint-visible');
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => hint.classList.add('hint-visible'), 60000);
+}
+requestAnimationFrame(() => hint.classList.add('hint-visible'));
+for (const type of [
+  'pointerdown',
+  'pointermove',
+  'keydown',
+  'wheel',
+  'input'
+]) {
+  document.addEventListener(type, activity, { passive: true });
+}
 void import('./collisions.js')
   .then(async (engine) => {
     if (await engine.initializeCollisions()) {

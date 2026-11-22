@@ -2,6 +2,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Box3, Matrix4, Quaternion, Vector3 } from 'three';
 import { geometry } from './model.js';
 import { hasKeys } from './clips.js';
+import { slideMovement } from './camera-follow.js';
 import { translateWorld } from './spatial.js';
 
 const tolerance = 0.00001;
@@ -91,11 +92,21 @@ function collect(object, excluded) {
   const shapes = [];
   object.updateWorldMatrix(true, true);
   object.traverse((mesh) => {
-    if (!mesh.isMesh || excluded.has(mesh)) return;
+    if ((!mesh.isMesh && !mesh.isCamera) || excluded.has(mesh)) return;
     for (let node = mesh; node; node = node.parent)
       if (node.clipActive === false) return;
     const data = mesh.userData;
     const solid = solidInHierarchy(mesh);
+    if (mesh.isCamera) {
+      if (!data.affectsSolids) return;
+      const position = mesh.getWorldPosition(new Vector3());
+      const radius = 0.14;
+      shapes.push({
+        position, rotation: aligned, shape: new RAPIER.Ball(radius), solid: data.solid,
+        bounds: new Box3(position.clone().addScalar(-radius), position.clone().addScalar(radius)), object: mesh
+      });
+      return;
+    }
     if (data.type !== 'mesh') {
       shapes.push({
         ...shapeFor(mesh.geometry, mesh.matrixWorld, data),
@@ -318,6 +329,18 @@ export function staticContacts(root, moving) {
       travel
     );
   };
+}
+
+export function followCamera(root, camera, desired) {
+  const origin = camera.getWorldPosition(new Vector3());
+  const candidates = pairs(root, camera);
+  if (!candidates.length) return desired;
+  return slideMovement(origin, desired, (at, travel) => {
+    const offset = at.clone().sub(origin);
+    return castPairs(candidates.map(({ a, b }) => ({
+      a: { ...a, position: a.position.clone().add(offset), bounds: a.bounds.clone().translate(offset) }, b
+    })), travel);
+  });
 }
 
 export function overlaps(root, object, any = false) {

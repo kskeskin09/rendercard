@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { Box3, Group, Vector3 } from 'three';
 import {
   overlaps,
+  followCamera,
   initializeCollisions,
   snapContact,
   sweep
@@ -31,6 +32,10 @@ import { readColor } from '../src/color-editor.js';
 import { profileTime } from '../src/motion.js';
 import { chooseTrack, keysFor } from '../src/clips.js';
 import { trajectory } from '../src/dynamics.js';
+import { constrainDimensions } from '../src/inspector-grid.js';
+import { cameraAt, writeCameraKey } from '../src/camera-track.js';
+import { updateOpacity } from '../src/opacity.js';
+import { setTileSize } from '../src/tiles.js';
 
 const close = (actual, expected) =>
   assert(Math.abs(actual - expected) < 0.0001, `${actual} != ${expected}`);
@@ -328,4 +333,114 @@ test('restoring a sharp solid edge detects the neighboring object before accepti
   solid.userData.edgeRadii[1] = 0;
   setDetail(solid, 24);
   assert.deepEqual(overlaps(root, solid), [neighbor]);
+});
+
+test('linked dimensions preserve their initial proportions on the snapped edited axis', () => {
+  const base = new Vector3(1, 2, 1);
+  const size = new Vector3(1, 1, 1);
+  const linked = constrainDimensions(
+    base,
+    new Vector3(1, 3.85, 1),
+    size,
+    ['y'],
+    true,
+    1
+  );
+  assert.deepEqual(linked.toArray(), [2, 4, 2]);
+  assert.deepEqual(
+    constrainDimensions(
+      base,
+      new Vector3(1, 3.85, 1),
+      size,
+      ['y'],
+      false,
+      1
+    ).toArray(),
+    [1, 4, 1]
+  );
+});
+
+test('camera cuts return to the default view and survive saving as discrete keys', () => {
+  const camera = makeObject('camera', 'Yakın');
+  camera.position.set(3, 4, 5);
+  const animations = {
+    clips: [{ id: 'main', name: 'Animasyon 1' }],
+    enabled: ['main'],
+    active: 'main'
+  };
+  writeCameraKey(animations, 10, camera.userData.cameraId);
+  writeCameraKey(animations, 30, null);
+  const defaultView = { position: [6, 5, 10], target: [0, 0, 0] };
+  const loaded = decodeProject(
+    JSON.parse(
+      JSON.stringify(
+        encodeProject(
+          new Group().add(camera),
+          60,
+          animations,
+          undefined,
+          defaultView
+        )
+      )
+    )
+  );
+  assert.deepEqual(loaded.defaultView, defaultView);
+  assert.equal(loaded.objects[0].isCamera, true);
+  assert.equal(cameraAt(loaded.animations, 9), null);
+  assert.equal(
+    cameraAt(loaded.animations, 10),
+    loaded.objects[0].userData.cameraId
+  );
+  assert.equal(cameraAt(loaded.animations, 30), null);
+});
+
+test('fully rounding every axis creates a sphere for equal dimensions', () => {
+  const object = makeObject('box', 'Tam yuvarlak', '#ffffff', 24, {
+    edgeRadii: [0.5, 0.5, 0.5]
+  });
+  const position = object.geometry.attributes.position;
+  for (let i = 0; i < position.count; i++) {
+    close(new Vector3().fromBufferAttribute(position, i).length(), 0.5);
+  }
+});
+
+test('a following camera slides along a wall and regains its offset when the wall clears', async () => {
+  await initializeCollisions();
+  const root = new Group();
+  const camera = makeObject('camera');
+  const wall = makeObject('box');
+  wall.userData.solid = true;
+  wall.position.set(2.25, 0, 0);
+  wall.scale.set(0.5, 10, 10);
+  root.add(camera, wall);
+
+  const desired = new Vector3(4, 2, 0);
+  const position = followCamera(root, camera, desired);
+  assert.ok(position.x > 1.8 && position.x < 2);
+  close(position.y, 2);
+  camera.position.copy(position);
+  camera.userData.affectsSolids = false;
+  close(followCamera(root, camera, desired).distanceTo(desired), 0);
+  camera.userData.affectsSolids = true;
+  root.remove(wall);
+  close(followCamera(root, camera, desired).distanceTo(desired), 0);
+});
+
+test('opacity and absolute tile size survive saving independently of the preview eye', () => {
+  const root = new Group();
+  const box = makeObject('box', 'Asfalt', '#ffffff', 24, {
+    hidden: true, opacity: 40, finish: 'tile', tile: 'asphalt', tileScale: 2
+  });
+  root.add(box);
+  const restored = decodeProject(encodeProject(root, 120)).objects[0];
+  assert.equal(restored.userData.hidden, true);
+  assert.equal(restored.userData.opacity, 40);
+  assert.equal(restored.userData.tile, 'asphalt');
+  assert.equal(restored.material.userData.tileSize.value, 2);
+  updateOpacity(restored, true);
+  assert.equal(restored.material.transparent, true);
+  assert.equal(restored.material.opacity, 0.4);
+  assert.equal(restored.shadowCoverage.value, 0.4);
+  setTileSize(restored.material, 1);
+  assert.equal(restored.material.userData.tileSize.value, 1);
 });

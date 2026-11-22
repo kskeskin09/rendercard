@@ -100,6 +100,9 @@
           >
             <span class="shape-art light-art" data-icon="light"></span>Işık
           </button>
+          <button id="add-camera" class="shape">
+            <span class="shape-art camera-art" data-icon="camera"></span>Kamera
+          </button>
         </div>
         <section id="preset-editor" class="preset-editor" hidden>
           <h3>Preset sahnesi</h3>
@@ -164,9 +167,7 @@
                 <label class="check-field"
                   ><input id="fog-enabled" type="checkbox" /> Sis açık</label
                 >
-                <label class="field"
-                  >Sis rengi<input id="fog-color" type="color"
-                /></label>
+                <div id="fog-palette"></div>
                 <label class="field"
                   >Başlangıç (m)<input
                     id="fog-near"
@@ -183,6 +184,15 @@
                 /></label>
               </div>
             </details>
+            <button
+              id="default-light"
+              class="quiet"
+              aria-pressed="false"
+              aria-label="Varsayılan ışık"
+              title="Varsayılan ışık"
+            >
+              <span data-icon="light"></span><span>Varsayılan ışık</span>
+            </button>
             <div class="export-wrap">
               <button
                 id="snap-settings"
@@ -251,7 +261,9 @@
           </div>
         </div>
         <div id="viewport" class="viewport">
-          <div class="viewport-tag"><span></span> Perspektif</div>
+          <div class="viewport-tag">
+            <span></span><b id="viewport-camera-name">Varsayılan</b>
+          </div>
           <div class="tool-strip" aria-label="Dönüşüm araçları">
             <button
               data-mode="select"
@@ -352,6 +364,32 @@
                   </div>
                 </div>
               </details>
+              <details class="camera-menu-wrap">
+                <summary class="quiet" title="Zaman çizelgesinde kamera geçişi">
+                  <span data-icon="camera"></span><span>Kamera</span>
+                </summary>
+                <div class="clip-menu">
+                  <label class="field"
+                    >Kamera
+                    <select id="camera-choice">
+                      <option value="">Varsayılan</option>
+                    </select></label
+                  >
+                  <button id="add-camera-key" class="quiet">
+                    Bu karede geç
+                  </button>
+                  <button id="remove-camera-key" class="quiet">
+                    Kamera karesini sil
+                  </button>
+                  <button
+                    id="preview-camera"
+                    class="quiet"
+                    aria-pressed="false"
+                  >
+                    Kamerayı önizle
+                  </button>
+                </div>
+              </details>
               <button
                 id="add-key"
                 class="quiet key-button"
@@ -415,12 +453,16 @@
       <button id="object-to-preset">
         <span data-icon="save"></span> Preset olarak kaydet
       </button>
+      <button id="context-rename">Yeniden adlandır</button>
+      <button id="context-delete">Sil</button>
     </div>
+    <div id="view-camera-menu" class="menu object-menu" hidden></div>
     <dialog id="preset-dialog" aria-labelledby="preset-title">
       <form id="preset-form">
         <h2 id="preset-title">Preset olarak kaydet</h2>
         <label class="field"
-          >Preset adı<input id="preset-name" maxlength="60" required
+          ><span id="preset-name-label">Preset adı</span
+          ><input id="preset-name" maxlength="60" required
         /></label>
         <p id="preset-error" role="alert" hidden></p>
         <div class="dialog-actions">

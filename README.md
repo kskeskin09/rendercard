@@ -33,13 +33,13 @@ Animasyon 30 FPS olarak WebM veya MP4 biçiminde yazılır. Tarayıcı sürümü
 
 ## Şekil ve yerleşim
 
-- Boyutlandırma tutamacı karşı kenarı sabit tutar. Sürüklerken **Shift** iki kenarı eşit miktarda değiştirir. Sayısal boyut alanında aynı davranış için **Shift+Enter** kullanın.
+- Boyutlandırma tutamacı karşı kenarı sabit tutar. Sürüklerken **Shift** iki kenarı eşit miktarda değiştirir. Sayısal boyut alanında aynı davranış için **Shift+Enter** kullanın. Dönüşüm tablosunun üstündeki zincir, X, Y ve Z boyutlarının oranını korur.
 - **Yerleşim** bölümünde üç eksenin merkez noktasını ayrı seçin. Merkez seçimi modelin sahnedeki yerini korur, konum alanları seçilen yeni noktayı gösterir. Boyut değiştiğinde merkez noktası yeni sınıra uyarlanır. Birden fazla nesne seçiliyken **Hizala** komutları, son seçilen nesnenin merkez noktasını referans alır. Sahne görünümündeki **Merkez noktası** düğmesi sahnedeki noktaları gösterir.
 - **Zemine bitiştir**, en uç kenarı veya seçili merkez noktasını zemine taşır. **Katılık**, taşıma sırasında yüzeyde durdurur. Açarken bir çakışma varsa nesnelerin adlarını gösterir ve sahneyi yerinde bırakır.
-- **Yakalama** menüsünde aynı anda bir mod kullanılır. **Tam konumlar** taşıma konumunu seçilen aralığın katlarına yuvarlar ve hassasiyeti varsayılan olarak 1 sahne birimidir. **Yüzeye yakala** yakın temas noktasını arar ve sürüklemede uygun kenarları hizalar.
-- Kutudaki **Kenar yuvarlama** X, Y ve Z eksenlerine paralel kenarlarda ayrı ayarlanır. Örneğin sadece Y değerini artırmak, üst ve alt yüzeyi düz bırakıp düşey kenarları yuvarlar. Düzenlenen eksen sahnede vurgulanır. **Tile ölçeği** `1/N` olarak girilir. Örneğin `1/4`, deseni dört kat sık tekrarlar.
-- **Görünür/Gizli** sahnede ve renderda uygulanır. Gizli katı nesneler temas kontrolünde kalır. Rengi paletten seçebilir veya HEX, RGB ve HSL biçimlerinde girebilirsiniz. Sahneden renk alma aracı, kullanacağı render rengini imlecin yanında gösterir.
-- **Işık** ile bağımsız bir noktasal ışık yerleştirin. Bir cismin **Işık yay** seçeneği, cismin yüzeyini parlatır ve merkezini takip eden bir ışık ekler. Sis için **Sahne görünümü → Sis** menüsünde renk, başlangıç mesafesi ve tam sis mesafesini belirleyin.
+- **Yakalama** menüsünde aynı anda bir mod kullanılır. **Tam konumlar** taşıma ve boyutlandırmayı seçilen aralığın katlarına yakalar. Oran kilidinde düzenlenen eksen yakalanır ve diğer boyutlar ona göre orantılanır. Varsayılan hassasiyet 1 sahne birimidir. **Yüzeye yakala** yakın temas noktasını arar ve sürüklemede uygun kenarları hizalar.
+- Kutudaki **Kenar yuvarlama** X, Y ve Z eksenlerine paralel kenarlarda ayrı ayarlanır. Örneğin sadece Y değerini artırmak, üst ve alt yüzeyi düz bırakıp düşey kenarları yuvarlar. Küpte bütün eksenleri %50 yapmak küre verir. İnce ve eşit X–Z boyutlu bir kutuda üstten görünüş çember olur. Çim ve asfalt dahil tüm desenler %100 ölçekte bir zemin karesi boyutundadır. %200, karonun kenarını iki katına çıkarır.
+- Nesne listesinin solundaki göz, nesneyi düzenleme önizlemesinde gösterir veya gizler. **Opaklık** hem önizlemeyi hem dışa aktarılan görüntüyü etkiler. %0 tamamen saydam, %100 opaktır. Gizli ve saydam katı nesneler temas kontrolünde kalır. Rengi paletten seçebilir veya HEX, RGB ve HSL biçimlerinde girebilirsiniz.
+- **Işık** ile bağımsız bir noktasal ışık yerleştirin. **Varsayılan ışık** sahneyi hazır ışıklarla aydınlatır. Bir cismin **Işık yay** seçeneği, cismin yüzeyini parlatır ve merkezini takip eden bir ışık ekler. **Sis** menüsünden paletle renk seçebilir, başlangıç ve tam sis mesafesini belirleyebilirsiniz.
 
 ## Animasyon sahneleri
 
@@ -47,7 +47,13 @@ Zaman çizelgesindeki **Animasyonlar** menüsünden kanal ekleyip silebilirsiniz
 
 **Karelerle hareket** modunda hız grafiğinin başlangıç, orta ve bitiş yüzdeleri geçişin içindeki göreli hızı belirler. Her geçiş, hedef kareye zamanında varacak şekilde hesaplanır. **Fiziksel ivme** modunda dünya eksenlerinde başlangıç hızı (m/s) ve sabit ivme (m/s²) ayrı belirlenir. Zemin ve sabit katı yüzeylerle temasta **Sekme (%)**, yüzeye dik hızın ters yönde ne kadarının korunacağını belirler. İvme temas sonrasında da aynı kalır. Bir sahne birimi bir metre kabul edilir. Hız grafiği bu modda yalnızca dönüş ve boyuta uygulanır.
 
+**Zemine tepki verir** kutusu, nesnenin sahne zemini olan Y = 0 ile fiziksel temasını açar veya kapatır. Katı nesnelerle temas kendi ayarlarını kullanır.
+
 Dönüşte **Kısa yol** veya **Uzun yol** yönelimi izler. **X, Y, Z açılarını izle** seçeneği her eksende girilen açı değişimini ve tam turu korur.
+
+**Kamera** eklediğinizde yeni kamera düzenleme görünümünüzün konum ve açısını kopyalar. Serbest düzenleme görünümünüz **Varsayılan** olarak kalır. Zaman çizelgesindeki **Kamera → Bu karede geç** komutu seçili animasyona kesme ekler. **Kamerayı önizle** kesmeleri çizelgeyi tararken gösterir. Oynatma ve dışa aktarma ilgili karedeki kamerayı kullanır.
+
+Kamera sıfırlama düğmesine sol tıklamak varsayılan görünümü açar. Sağ tıklamak kamera listesini açar. **Kamera takibi** seçilen nesnenin merkezine bakar ve takip başlarken ölçülen uzaklığı ve yönü korur. **Katı cisimlerden etkilen** açıkken kamera engel boyunca hareket edebilir ve yol açılınca takip konumuna geri döner. **Mesafeyi yeniden al** mevcut konumu yeni takip konumu olarak kullanır.
 
 ## Presetler
 
