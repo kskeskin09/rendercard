@@ -4,10 +4,9 @@ import {
   Matrix4,
   Mesh,
   MeshStandardMaterial,
+  PointLight,
   SphereGeometry,
   MathUtils,
-  Euler,
-  Quaternion,
   Vector3
 } from 'three';
 import {
@@ -17,16 +16,33 @@ import {
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { applyTile, tiles } from './tiles.js';
 import { fitPivot } from './spatial.js';
+import {
+  easedTime,
+  travelTime,
+  interpolateRotation,
+  rotationPaths
+} from './motion.js';
 
-export const types = { box: 'Kutu', sphere: 'Küre', group: 'Grup', mesh: 'Ağ' };
+export const types = {
+  box: 'Kutu',
+  sphere: 'Küre',
+  group: 'Grup',
+  mesh: 'Ağ',
+  light: 'Işık'
+};
 export const levels = [12, 24, 48];
-export const projectVersion = 2;
+export const projectVersion = 3;
 const channels = ['position', 'rotation', 'scale'];
 
 const settingsDefaults = {
   radius: 0,
   segments: 4,
   solid: false,
+  hidden: false,
+  easeIn: 0,
+  easeOut: 0,
+  acceleration: 0,
+  rotationPath: 'short',
   finish: 'color',
   tile: 'checker',
   tileScale: 1,
@@ -84,7 +100,7 @@ function configureMesh(object) {
 export function makeObject(
   type,
   name = types[type],
-  color = type === 'box' ? '#b8a8f3' : '#dcf878',
+  color = type === 'light' ? '#fff1d9' : type === 'box' ? '#b8a8f3' : '#dcf878',
   detail = 24,
   data
 ) {
@@ -92,11 +108,17 @@ export function makeObject(
   const object =
     type === 'group'
       ? new Group()
-      : configureMesh(
-          new Mesh(geometry(type, detail, settings), material(color, settings))
-        );
+      : type === 'light'
+        ? new PointLight(color, data?.intensity ?? 18)
+        : configureMesh(
+            new Mesh(
+              geometry(type, detail, settings),
+              material(color, settings)
+            )
+          );
   object.name = name;
   object.userData = { type, detail, keys: [], ...settings };
+  object.visible = !settings.hidden;
   return object;
 }
 
@@ -113,11 +135,16 @@ function makeJoinedMesh(parts, name = 'Birleşik ağ', data) {
   const mesh = configureMesh(
     new Mesh(
       merged.translate(...settings.offset),
-      parts.map((part) => material(part.color, part))
+      parts.map((part) => {
+        const surface = material(part.color, part);
+        surface.visible = !part.hidden;
+        return surface;
+      })
     )
   );
   mesh.name = name;
   mesh.userData = { type: 'mesh', keys: [], parts, ...settings };
+  mesh.visible = !settings.hidden;
   return mesh;
 }
 
@@ -132,6 +159,7 @@ export function joinMeshes(objects) {
       matrix.multiply(new Matrix4().makeTranslation(...object.userData.offset));
       return object.userData.parts.map((part) => ({
         ...part,
+        hidden: object.userData.hidden || part.hidden === true,
         matrix: new Matrix4()
           .fromArray(part.matrix)
           .premultiply(matrix)
@@ -148,7 +176,12 @@ export function joinMeshes(objects) {
       }
     ];
   });
-  const merged = makeJoinedMesh(parts);
+  const hidden = parts.every((part) => part.hidden);
+  if (hidden)
+    parts.forEach((part) => {
+      part.hidden = false;
+    });
+  const merged = makeJoinedMesh(parts, undefined, { hidden });
   merged.userData.solid = objects.some((object) => object.userData.solid);
   merged.position.copy(center);
   objects.forEach(disposeObject);
@@ -166,6 +199,7 @@ export function setDetail(object, detail) {
 
 export function disposeObject(object) {
   object.traverse((child) => {
+    if (child.isLight) child.dispose();
     if (!child.isMesh) return;
     child.geometry.dispose();
     materialsOf(child).forEach((material) => {
@@ -207,14 +241,19 @@ export function poseAt(object, frame) {
   }
   const a = keys[next - 1];
   const b = keys[next];
-  const t = (frame - a.frame) / (b.frame - a.frame);
-  const interpolate = (channel) =>
+  const clock = (frame - a.frame) / (b.frame - a.frame);
+  const { easeIn, easeOut, acceleration, rotationPath } = object.userData;
+  const t = easedTime(clock, easeIn, easeOut);
+  const interpolate = (channel, t) =>
     a[channel].map((value, axis) => MathUtils.lerp(value, b[channel][axis], t));
-  object.position.fromArray(interpolate('position'));
-  object.scale.fromArray(interpolate('scale'));
-  const start = new Quaternion().setFromEuler(new Euler(...a.rotation));
-  const end = new Quaternion().setFromEuler(new Euler(...b.rotation));
-  object.quaternion.slerpQuaternions(start, end, t);
+  object.position.fromArray(
+    interpolate(
+      'position',
+      easedTime(travelTime(clock, acceleration), easeIn, easeOut)
+    )
+  );
+  object.scale.fromArray(interpolate('scale', t));
+  interpolateRotation(object, a.rotation, b.rotation, t, rotationPath);
 }
 
 export function encodeObject(object) {
@@ -222,10 +261,12 @@ export function encodeObject(object) {
     name: object.name,
     ...object.userData,
     ...capture(object),
-    color:
-      object.isMesh && object.userData.type !== 'mesh'
+    color: object.isLight
+      ? '#' + object.color.getHexString()
+      : object.isMesh && object.userData.type !== 'mesh'
         ? '#' + object.material.color.getHexString()
         : undefined,
+    intensity: object.isLight ? object.intensity : undefined,
     children: object.children.map(encodeObject)
   };
 }
@@ -257,11 +298,21 @@ export function decodeProject(project) {
         data.segments >= 1 &&
         data.segments <= 12)) &&
     (data.solid == null || typeof data.solid === 'boolean') &&
+    (data.hidden == null || typeof data.hidden === 'boolean') &&
+    [data.easeIn, data.easeOut].every(
+      (value) =>
+        value == null || (Number.isFinite(value) && value >= 0 && value <= 1)
+    ) &&
+    (data.acceleration == null ||
+      (Number.isFinite(data.acceleration) &&
+        Math.abs(data.acceleration) <= 1)) &&
+    (data.rotationPath == null ||
+      Object.hasOwn(rotationPaths, data.rotationPath)) &&
     (data.finish == null || ['color', 'tile'].includes(data.finish)) &&
     (data.tile == null || Object.hasOwn(tiles, data.tile)) &&
     (data.tileScale == null ||
       (Number.isFinite(data.tileScale) &&
-        data.tileScale >= 0.05 &&
+        data.tileScale >= 0.001 &&
         data.tileScale <= 20)) &&
     (data.pivot == null ||
       (numericTuple(data.pivot) &&
@@ -295,6 +346,11 @@ export function decodeProject(project) {
           (index > 0 && data.keys[index - 1].frame >= key.frame)
       ) ||
       (data.type !== 'group' && data.children.length > 0) ||
+      (data.type === 'light' &&
+        (!/^#[0-9a-f]{6}$/i.test(data.color) ||
+          !Number.isFinite(data.intensity) ||
+          data.intensity < 0 ||
+          data.intensity > 10000)) ||
       (data.type === 'mesh' &&
         (!Array.isArray(data.parts) ||
           data.parts.length < 2 ||
@@ -316,7 +372,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, projectVersion].includes(project?.version) ||
+    ![1, 2, projectVersion].includes(project?.version) ||
     !validFrame(project.duration) ||
     project.duration < 1 ||
     !Array.isArray(project.objects)

@@ -93,7 +93,7 @@ export function createViewport(
             .clone()
             .applyQuaternion(transform.worldQuaternionStart.clone().invert())
         : undefined;
-    editing(direction);
+    editing(direction, transform.axis);
   });
   transform.addEventListener('mouseUp', moved);
 
@@ -131,7 +131,76 @@ export function createViewport(
 
   const pointer = new THREE.Vector2();
   const ray = new THREE.Raycaster();
+  ray.params.Points.threshold = 0.17;
   let down;
+  let sampler;
+  const lightMarkers = new THREE.Points(
+    new THREE.BufferGeometry(),
+    new THREE.PointsMaterial({
+      color: '#ffe397',
+      size: 10,
+      sizeAttenuation: false,
+      depthTest: false
+    })
+  );
+  lightMarkers.frustumCulled = false;
+  lightMarkers.renderOrder = 11;
+  scene.add(lightMarkers);
+  const visibleLights = [];
+
+  function pickColor(callback) {
+    sampler = callback;
+    renderer.domElement.classList.toggle('sampling-color', Boolean(callback));
+  }
+
+  renderer.domElement.addEventListener(
+    'pointerdown',
+    (event) => {
+      if (!sampler) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      down = undefined;
+      const callback = sampler;
+      pickColor(undefined);
+      if (event.button !== 0) return;
+      render(true);
+      const canvas = renderer.domElement;
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.max(
+        0,
+        Math.min(
+          canvas.width - 1,
+          Math.floor(((event.clientX - rect.left) * canvas.width) / rect.width)
+        )
+      );
+      const topY = Math.max(
+        0,
+        Math.min(
+          canvas.height - 1,
+          Math.floor(((event.clientY - rect.top) * canvas.height) / rect.height)
+        )
+      );
+      const gl = renderer.getContext();
+      const pixel = new Uint8Array(4);
+      gl.readPixels(
+        x,
+        canvas.height - topY - 1,
+        1,
+        1,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        pixel
+      );
+      callback(
+        '#' +
+          [...pixel.slice(0, 3)]
+            .map((channel) => channel.toString(16).padStart(2, '0'))
+            .join('')
+      );
+      render();
+    },
+    { capture: true }
+  );
   renderer.domElement.addEventListener('pointerdown', (event) => {
     if (event.isPrimary && event.button === 0 && !transform.axis)
       down = [event.clientX, event.clientY];
@@ -152,10 +221,18 @@ export function createViewport(
       1 - (2 * (event.clientY - rect.top)) / rect.height
     );
     ray.setFromCamera(pointer, camera);
-    select(
-      ray.intersectObjects(root.children, true)[0]?.object,
-      event.shiftKey
-    );
+    const light = ray.intersectObject(lightMarkers)[0];
+    const hit = ray
+      .intersectObjects(root.children, true)
+      .find(({ object, face }) => {
+        for (let node = object; node; node = node.parent)
+          if (!node.visible) return false;
+        return (
+          !Array.isArray(object.material) ||
+          object.material[face?.materialIndex]?.visible !== false
+        );
+      });
+    select(light ? visibleLights[light.index] : hit?.object, event.shiftKey);
   });
   renderer.domElement.addEventListener('pointercancel', () => {
     down = undefined;
@@ -199,28 +276,51 @@ export function createViewport(
     }
     grid.visible = !clean;
     transformHelper.visible = !clean && Boolean(transform.object);
-    outline.visible = !clean && Boolean(selected);
+    outline.visible =
+      !clean && Boolean(selected && !selected.isLight && selected.visible);
     if (outline.visible) outline.setFromObject(selected);
     pivots.visible = !clean && showPivots;
-    if (pivots.visible) {
+    lightMarkers.visible = !clean;
+    if (!clean) {
       const positions = [];
+      const lights = [];
+      visibleLights.length = 0;
       root.updateMatrixWorld();
-      root.traverse((object) => {
-        if (object !== root) {
+      root.traverseVisible((object) => {
+        if (object !== root && (pivots.visible || object.isLight)) {
           point.setFromMatrixPosition(object.matrixWorld);
-          positions.push(point.x, point.y, point.z);
+          if (pivots.visible) positions.push(point.x, point.y, point.z);
+          if (object.isLight) {
+            visibleLights.push(object);
+            lights.push(point.x, point.y, point.z);
+          }
         }
       });
-      let buffer = pivots.geometry.getAttribute('position');
-      if (!buffer || buffer.array.length !== positions.length) {
-        pivots.geometry.dispose();
-        buffer = new THREE.Float32BufferAttribute(positions.length, 3);
-        pivots.geometry.setAttribute('position', buffer);
-      }
-      buffer.array.set(positions);
-      buffer.needsUpdate = true;
+      updateMarkers(lightMarkers, lights);
+      if (pivots.visible) updateMarkers(pivots, positions);
     }
     renderer.render(scene, camera);
+  }
+
+  function updateMarkers(markers, positions) {
+    let buffer = markers.geometry.getAttribute('position');
+    if (!buffer || buffer.array.length !== positions.length) {
+      markers.geometry.dispose();
+      buffer = new THREE.Float32BufferAttribute(positions.length, 3);
+      markers.geometry.setAttribute('position', buffer);
+      markers.geometry.boundingSphere = null;
+    }
+    let moved = false;
+    for (let index = 0; index < positions.length; index++) {
+      if (Math.fround(positions[index]) !== buffer.array[index]) {
+        buffer.array[index] = positions[index];
+        moved = true;
+      }
+    }
+    if (moved) {
+      buffer.needsUpdate = true;
+      markers.geometry.boundingSphere = null;
+    }
   }
 
   function lockSize(value) {
@@ -229,6 +329,7 @@ export function createViewport(
   }
   return {
     render,
+    pickColor,
     reset,
     captureCamera: () => ({
       position: camera.position.clone(),

@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Box3, Group, Vector3 } from 'three';
 import {
-  clearSolidOverlap,
+  overlaps,
   initializeCollisions,
-  separate,
+  snapContact,
   sweep
 } from '../src/collisions.js';
 import {
@@ -24,6 +24,8 @@ import {
   localBounds
 } from '../src/spatial.js';
 import { createHistory } from '../src/history.js';
+import { snapToGrid, surfaceOffset } from '../src/snapping.js';
+import { readColor } from '../src/color-editor.js';
 
 const close = (actual, expected) =>
   assert(Math.abs(actual - expected) < 0.0001, `${actual} != ${expected}`);
@@ -85,7 +87,7 @@ test('a group pivot follows resized children without moving their surfaces', () 
   close(bounds(group).min.x, resized.min.x);
 });
 
-test('solid overlap pushes a rotated object out and a swept move cannot cross it', async () => {
+test('overlap detection leaves poses intact and a swept move cannot cross a solid', async () => {
   assert(await initializeCollisions());
   const root = new Group();
   const obstacle = makeObject('box');
@@ -93,12 +95,12 @@ test('solid overlap pushes a rotated object out and a swept move cannot cross it
   root.add(obstacle, guest);
   guest.rotation.y = 0.5;
   guest.position.x = 0.3;
-  obstacle.userData.solid = true;
-  assert.deepEqual(clearSolidOverlap(root, obstacle), [guest]);
-  close(guest.position.x, 0.5 + (Math.cos(0.5) + Math.sin(0.5)) * 0.5);
+  assert.deepEqual(overlaps(root, obstacle, true), [guest]);
+  close(guest.position.x, 0.3);
   close(guest.rotation.y, 0.5);
-  assert.equal(separate(root, guest), false);
   guest.position.set(-3, 0, 0);
+  assert.deepEqual(overlaps(root, obstacle, true), []);
+  obstacle.userData.solid = true;
   const from = guest.position.clone();
   guest.position.x = 3;
   sweep(root, guest, from);
@@ -153,4 +155,60 @@ test('legacy projects get centered pivots and changing a scene clears redo', () 
   history.step(-1);
   history.remember(before, { project: 'yeni' });
   assert.equal(history.canRedo, false);
+});
+
+test('grid only rounds active axes and surface contact also aligns nearby lateral edges', async () => {
+  const guest = makeObject('box');
+  guest.position.set(1.37, 0.23, 0);
+  snapToGrid(guest, ['x'], 0.5);
+  close(guest.position.x, 1.5);
+  close(guest.position.y, 0.23);
+  const target = new Box3(new Vector3(-1, 0, -1), new Vector3(1, 1, 1));
+  const moving = new Box3(
+    new Vector3(-0.8, 1.1, -0.5),
+    new Vector3(0.2, 2.1, 0.5)
+  );
+  const offset = surfaceOffset(moving, [target], ['x', 'y'], 0.3);
+  close(offset.x, -0.2);
+  close(offset.y, -0.1);
+  assert(await initializeCollisions());
+  const stationary = makeObject('box');
+  guest.position.set(1.2, 0, 0);
+  const root = new Group().add(stationary, guest);
+  assert(snapContact(root, guest, ['x'], 0.3));
+  close(guest.position.x, 1);
+});
+
+test('visibility, lights, color formats and timing are preserved in the project', () => {
+  const light = makeObject('light', 'Fener', '#caff80', 24, {
+    color: '#caff80',
+    intensity: 90,
+    hidden: true
+  });
+  const mesh = makeObject('box', 'Hareket', '#ffffff', 24, {
+    acceleration: 1,
+    rotationPath: 'axes'
+  });
+  writeKey(mesh, 0);
+  mesh.position.x = 10;
+  mesh.rotation.y = 2 * Math.PI;
+  writeKey(mesh, 60);
+  const [loadedLight, loadedMesh] = decodeProject(
+    JSON.parse(JSON.stringify(encodeProject(new Group().add(light, mesh), 60)))
+  ).objects;
+  assert.equal(loadedLight.visible, false);
+  assert.equal(loadedLight.intensity, 90);
+  assert.equal(loadedLight.color.getHexString(), 'caff80');
+  poseAt(loadedMesh, 30);
+  close(loadedMesh.position.x, 2.5);
+  close(loadedMesh.rotation.y, Math.PI);
+  loadedMesh.userData.rotationPath = 'long';
+  loadedMesh.userData.keys[1].rotation[1] = Math.PI / 2;
+  poseAt(loadedMesh, 30);
+  close(
+    new Vector3(1, 0, 0).applyQuaternion(loadedMesh.quaternion).x,
+    -Math.SQRT1_2
+  );
+  assert.equal(readColor('255, 0, 0', 'RGB').getHexString(), 'ff0000');
+  assert.equal(readColor('120, 100%, 50%', 'HSL').getHexString(), '00ff00');
 });

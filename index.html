@@ -92,6 +92,13 @@
           ><button id="add-sphere" class="shape">
             <span class="shape-art sphere-art" data-icon="sphere"></span>Küre
           </button>
+          <button
+            id="add-light"
+            class="shape"
+            title="Sahneyi bir noktadan aydınlatan ışık ekle"
+          >
+            <span class="shape-art light-art" data-icon="light"></span>Işık
+          </button>
         </div>
         <section id="preset-editor" class="preset-editor" hidden>
           <h3>Preset sahnesi</h3>
@@ -126,7 +133,11 @@
             <span data-icon="trash"></span> Sil
           </button>
         </div>
-        <div class="align-actions" aria-label="Merkez noktalarını hizala">
+        <div
+          class="align-actions"
+          aria-label="Merkez noktalarını hizala"
+          title="Seçilen eksende, diğer nesnelerin merkezini son seçilen nesnenin merkeziyle aynı konuma getir."
+        >
           <span>Hizala</span>
           <button class="quiet" data-align="x" aria-label="X ekseninde hizala">
             X
@@ -146,6 +157,41 @@
         <div class="viewport-bar">
           <h1>Sahne görünümü</h1>
           <div class="viewport-actions">
+            <div class="export-wrap">
+              <button
+                id="snap-settings"
+                class="quiet"
+                aria-expanded="false"
+                aria-label="Yakalama"
+                title="Taşıma sırasında konum ve yüzey yakalama seçenekleri"
+              >
+                <span data-icon="snap"></span><span>Yakalama</span>
+              </button>
+              <div id="snap-menu" class="menu snap-menu" hidden>
+                <label
+                  class="check-field"
+                  title="Taşırken konumu belirlenen aralığın katlarına oturtur."
+                  ><input id="snap-grid" type="checkbox" /> Tam konumlar</label
+                >
+                <label
+                  class="check-field"
+                  title="Yakın yüzeyleri temas ettirir, yan yana sürüklerken yakın kenarları hizalar."
+                  ><input id="snap-surface" type="checkbox" /> Yüzeye
+                  yakala</label
+                >
+                <label
+                  class="field"
+                  title="Tam konum aralığı ve yüzeyin yakalanabileceği en büyük mesafe."
+                  >Hassasiyet<input
+                    id="snap-step"
+                    type="number"
+                    min="0.001"
+                    max="100"
+                    step="any"
+                    value="1"
+                /></label>
+              </div>
+            </div>
             <button
               id="wireframe"
               class="quiet"

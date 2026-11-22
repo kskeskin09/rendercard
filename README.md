@@ -4,7 +4,7 @@ Rendercard, sade bir Türkçe arayüzle 3B sahne oluşturmayı, canlandırmayı 
 
 ## Windows'ta açma
 
-[GitHub Sürümleri](https://github.com/kskeskin09/rendercard/releases/latest) sayfasından `Rendercard-…-Windows-x64.exe` dosyasını indirip çift tıklayın. Windows x64 sürümü taşınabilirdir. Kurulum, Node.js, internet bağlantısı veya yerel sunucu gerektirmez.
+Yerel `release/` klasöründeki `Rendercard-…-Windows-x64.exe` dosyasına çift tıklayın. Daha önce yayımlanan paketleri [GitHub Sürümleri](https://github.com/kskeskin09/rendercard/releases) sayfasında bulabilirsiniz. Windows x64 sürümü taşınabilirdir. Kurulum, Node.js, internet bağlantısı veya yerel sunucu gerektirmez.
 
 PNG, video ve JSON çıktılarının konumunu Windows kaydetme penceresinden seçebilirsiniz.
 
@@ -35,8 +35,13 @@ Animasyon 30 FPS olarak WebM veya MP4 biçiminde yazılır. Tarayıcı sürümü
 
 - Ölçek tutamacı karşı kenarı sabit tutar. Sürüklerken **Shift** iki kenarı eşit miktarda değiştirir. Sayısal ölçek alanında aynı davranış için **Shift+Enter** kullanın.
 - **Yerleşim** bölümünde üç eksenin merkez noktasını ayrı seçin. Merkez seçimi modelin sahnedeki yerini korur, konum alanları seçilen yeni noktayı gösterir. Boyut değiştiğinde merkez noktası yeni sınıra uyarlanır. Birden fazla nesne seçiliyken **Hizala** komutları, son seçilen nesnenin merkez noktasını referans alır. Sahne görünümündeki **Merkez noktası** düğmesi sahnedeki noktaları gösterir.
-- **Zemine bitiştir** nesnenin en alt noktasını zemine taşır. **Katılık** çakışan nesneleri dönmeden ayırır ve taşıma sırasında temasta durdurur.
-- Kutuda **Köşe yarıçapı** ve **Köşe ayrıntısı** ayarlanır. İnce, eşit X ve Z boyutlu bir kutuda yüksek yarıçap yuvarlak bir disk oluşturur. **Görünüm** bölümündeki **Tile (döşeme)** seçeneği dama, seramik ve tuğla desenleri sunar. Tile ölçeği arttıkça desenin parçaları büyür.
+- **Zemine bitiştir**, en uç kenarı veya seçili merkez noktasını zemine taşır. **Katılık**, taşıma sırasında yüzeyde durdurur. Açarken bir çakışma varsa nesnelerin adlarını gösterir ve sahneyi yerinde bırakır.
+- **Yakalama** menüsünde **Tam konumlar** taşıma konumunu belirlenen aralığın katlarına yuvarlar. **Yüzeye yakala** temas noktasını arar ve yan yana sürüklemede uygun kenarları hizalar. Hassasiyet varsayılan olarak 1 sahne birimidir.
+- Kutudaki **Köşe yarıçapı** biçimi yuvarlar, **Köşe ayrıntısı** eğrinin pürüzsüzlüğünü ayarlar. **Tile ölçeği** `1/N` olarak girilir. Örneğin `1/4`, deseni dört kat sık tekrarlar.
+- **Görünür/Gizli** sahnede ve renderda uygulanır. Gizli katı nesneler temas kontrolünde kalır. Renk alanı HEX, RGB ve HSL biçimlerinde düzenlenebilir. Sahneden renk alma, render rengini örnekler.
+- **Işık** ile ek bir noktasal ışık ekleyip konumunu, rengini ve gücünü ayarlayın.
+
+Her nesnenin animasyon ayarlarında yumuşak hızlanma ve yavaşlama gücü ayrı seçilir. Konum ivmesi, iki kare arasındaki varış anını koruyup hareketin önce yavaş sonra hızlı veya tersine ilerlemesini sağlar. Dönüşte **Kısa yol** veya **Uzun yol** yönelimi izler. **X, Y, Z açılarını izle** seçeneği her eksende girilen açı değişimini ve tam turu korur.
 
 ## Presetler
 

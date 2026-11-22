@@ -898,3 +898,70 @@ kbd {
     display: none;
   }
 }
+.setting-heading,
+.color-row,
+.fraction {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.setting-heading {
+  justify-content: space-between;
+}
+.setting-heading h3 {
+  margin: 0;
+}
+.setting-heading button {
+  min-height: 26px;
+  font-size: 11px;
+}
+.fraction {
+  white-space: nowrap;
+}
+.color-editor {
+  flex: 1;
+  min-width: 0;
+}
+.color-editor summary {
+  cursor: pointer;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.color-editor > input {
+  margin-top: 5px;
+}
+.color-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin: 0 5px;
+  vertical-align: middle;
+  border: 1px solid #696f65;
+  border-radius: 3px;
+}
+#pick-color {
+  align-self: flex-start;
+  min-height: 28px;
+  min-width: 29px;
+}
+.viewport canvas.sampling-color {
+  cursor: crosshair;
+}
+.light-art {
+  color: #8a5b0b;
+  background: #fff0c6;
+}
+.snap-menu {
+  width: 192px;
+  top: 32px;
+  padding: 10px;
+}
+.snap-menu input[type='number'] {
+  width: 100%;
+}
+@media (max-width: 820px) {
+  #snap-settings span:last-child {
+    display: none;
+  }
+}

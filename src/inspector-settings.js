@@ -1,6 +1,8 @@
 import { applyTile, tiles } from './tiles.js';
 import { changePivot, groundObject } from './spatial.js';
 import { setDetail } from './model.js';
+import { colorMarkup, bindColor } from './color-editor.js';
+import { rotationPaths } from './motion.js';
 
 const axes = ['x', 'y', 'z'];
 const choices = [
@@ -17,11 +19,14 @@ const options = (entries) =>
 
 export function settingsMarkup(object) {
   const type = object.userData.type;
+  const primitive = type === 'box' || type === 'sphere';
   return (
     '<div class="inspector-block"><h3>Yerleşim</h3>' +
-    '<label class="check-field"><input id="object-solid" type="checkbox"> Katılık</label>' +
-    '<button id="object-ground" class="quiet ground-action">Zemine bitiştir</button>' +
-    '<div class="field">Merkez noktası<div class="axis-fields pivot-fields">' +
+    (type === 'light'
+      ? ''
+      : '<label class="check-field" title="Katı yüzeylerden geçişi engeller. Açmak için nesneyi önce çakışmalardan ayır."><input id="object-solid" type="checkbox"> Katılık</label>') +
+    '<label class="field" title="Nesnenin alt kenarını veya seçili merkezini sahne zeminiyle hizalar.">Zemine bitiştir<select id="object-ground"><option value="">Bir nokta seç</option><option value="edge">En uç kenarı</option><option value="center">Merkezi</option></select></label>' +
+    '<div class="field" title="Konum ve hizalama işlemlerinin referans noktası.">Merkez noktası<div class="axis-fields pivot-fields">' +
     axes
       .map((axis, index) => {
         const label = axis.toUpperCase();
@@ -39,22 +44,27 @@ export function settingsMarkup(object) {
       })
       .join('') +
     '</div></div></div>' +
-    (type === 'box' || type === 'sphere'
-      ? '<div class="inspector-block"><h3>Görünüm</h3><label class="field">Yüzey<select id="object-finish">' +
+    '<div class="inspector-block"><div class="setting-heading"><h3>Görünüm</h3><button id="object-visible" class="quiet" title="Nesneyi sahnede ve renderda göster veya gizle" aria-pressed="true"></button></div>' +
+    (primitive
+      ? '<label class="field" title="Düz bir renk veya tekrarlanan bir desen seç.">Yüzey<select id="object-finish">' +
         options([
           ['color', 'Renk'],
           ['tile', 'Tile (döşeme)']
         ]) +
         '</select></label>' +
-        '<label class="field">Renk<input id="object-color" type="color"></label>' +
+        colorMarkup +
         '<div id="tile-settings" hidden><label class="field">Tile<select id="object-tile">' +
         options(Object.entries(tiles)) +
         '</select></label>' +
-        '<label class="field">Tile ölçeği<input id="object-tile-scale" type="number" min="0.05" max="20" step="0.05"></label></div></div>'
-      : '') +
+        '<label class="field" title="1/4, desenin dörtte bir ölçeğe inmesi ve daha sık tekrarlanması demektir.">Tile ölçeği<span class="fraction">1 / <input id="object-tile-scale" aria-label="Tile ölçeği paydası" type="number" min="1" max="1000" step="any"></span></label></div>'
+      : type === 'light'
+        ? colorMarkup +
+          '<label class="field" title="Noktasal ışığın sahneyi ne kadar aydınlattığını ayarlar.">Işık gücü<input id="light-power" type="number" min="0" max="10000" step="any"></label>'
+        : '') +
+    '</div>' +
     (type === 'box'
-      ? '<div class="inspector-block"><h3>Geometri</h3><label class="field">Köşe yarıçapı (%)<input id="object-radius" type="number" min="0" max="50" step="1"></label>' +
-        '<label class="field">Köşe ayrıntısı<input id="object-segments" type="number" min="1" max="12" step="1"></label></div>'
+      ? '<div class="inspector-block"><h3>Geometri</h3><label class="field" title="Köşenin ne kadar yuvarlanacağını belirler. %0 keskin, %50 en yuvarlak köşedir.">Köşe yarıçapı (%)<input id="object-radius" type="number" min="0" max="50" step="1"></label>' +
+        '<label class="field" title="Yuvarlatılmış köşeleri oluşturan yüzey sayısı. Değer arttıkça köşe daha pürüzsüz görünür.">Köşe ayrıntısı<input id="object-segments" type="number" min="1" max="12" step="1"></label></div>'
       : '') +
     (type === 'sphere'
       ? '<div class="inspector-block"><h3>Geometri</h3><label class="field">Yüzey ayrıntısı<select id="object-detail">' +
@@ -64,25 +74,53 @@ export function settingsMarkup(object) {
           [48, 'Yüksek']
         ]) +
         '</select></label></div>'
-      : '')
+      : '') +
+    '<div class="inspector-block"><h3>Animasyon</h3>' +
+    '<label class="field" title="Yüksek değer, kareler arasındaki hareketi daha yavaş başlatır.">Yumuşak hızlanma (%)<input id="ease-in" type="number" min="0" max="100"></label>' +
+    '<label class="field" title="Yüksek değer, hedef kareye yaklaşırken hareketi daha çok yavaşlatır.">Yumuşak yavaşlama (%)<input id="ease-out" type="number" min="0" max="100"></label>' +
+    '<label class="field" title="Her geçiş boyunca konum hızını değiştirir. Artı değer hızlandırır, eksi değer yavaşlatır. Varış karesi aynı kalır.">Konum ivmesi (%)<input id="acceleration" type="number" min="-100" max="100"></label>' +
+    '<label class="field" title="Kısa veya uzun dönüş yolunu seç. Bir eksende belirli yönde ya da tam tur dönmek için açıları izle seçeneğini kullan.">Dönüş yolu<select id="rotation-path">' +
+    options(Object.entries(rotationPaths)) +
+    '</select></label></div>'
   );
 }
 
 export function bindSettings(
   panel,
   object,
-  { edit, changed, toggleSolid, collisionReady }
+  { edit, changed, toggleSolid, collisionReady, pick, status }
 ) {
   const $ = (id) => panel.querySelector('#' + id);
   const data = object.userData;
-  $('object-solid').checked = data.solid;
-  $('object-solid').disabled = !collisionReady;
-  $('object-solid').onchange = (event) =>
-    edit(() => toggleSolid(object, event.target.checked));
-  $('object-ground').onclick = () =>
+  if ($('object-solid')) {
+    $('object-solid').checked = data.solid;
+    $('object-solid').disabled = !collisionReady;
+    $('object-solid').onchange = (event) => {
+      const input = event.target;
+      edit(() => toggleSolid(object, input.checked));
+      input.checked = data.solid;
+    };
+  }
+  $('object-ground').onchange = (event) => {
+    const select = event.target;
+    if (select.value)
+      edit(() => {
+        const oldPosition = object.position.clone();
+        groundObject(object, select.value);
+        return changed(object, oldPosition);
+      });
+    select.value = '';
+  };
+  function visibility() {
+    $('object-visible').textContent = data.hidden ? 'Gizli' : 'Görünür';
+    $('object-visible').setAttribute('aria-pressed', String(!data.hidden));
+  }
+  visibility();
+  $('object-visible').onclick = () =>
     edit(() => {
-      groundObject(object);
-      changed(object);
+      data.hidden = !data.hidden;
+      object.visible = !data.hidden;
+      visibility();
     });
   for (const [index, select] of [
     ...panel.querySelectorAll('[data-pivot]')
@@ -94,28 +132,20 @@ export function bindSettings(
         changed();
       });
   }
-  function number(id, value, min, max, update) {
+  function number(id, read, min, max, update) {
     const input = $(id);
-    input.value = value;
+    input.value = read();
     input.onchange = () => {
       const next = input.valueAsNumber;
       if (Number.isFinite(next))
         edit(() => update(Math.max(min, Math.min(max, next))));
-      input.value =
-        id === 'object-radius'
-          ? data.radius * 100
-          : id === 'object-segments'
-            ? data.segments
-            : data.tileScale;
+      input.value = read();
     };
   }
   if ($('object-finish')) {
     $('object-finish').value = data.finish;
-    $('object-color').value = '#' + object.material.color.getHexString();
     $('object-tile').value = data.tile;
     $('tile-settings').hidden = data.finish !== 'tile';
-    $('object-color').onchange = (event) =>
-      edit(() => object.material.color.set(event.target.value));
     $('object-finish').onchange = (event) =>
       edit(() => {
         data.finish = event.target.value;
@@ -127,28 +157,82 @@ export function bindSettings(
         data.tile = event.target.value;
         applyTile(object.material, data);
       });
-    number('object-tile-scale', data.tileScale, 0.05, 20, (value) => {
-      data.tileScale = value;
-      object.material.map?.repeat.setScalar(1 / value);
-    });
+    number(
+      'object-tile-scale',
+      () => 1 / data.tileScale,
+      1,
+      1000,
+      (value) => {
+        data.tileScale = 1 / value;
+        object.material.map?.repeat.setScalar(value);
+      }
+    );
   }
   function rebuild(detail = data.detail) {
     setDetail(object, detail);
-    changed(object);
+    return changed(object);
   }
   if ($('object-radius')) {
-    number('object-radius', data.radius * 100, 0, 50, (value) => {
-      data.radius = value / 100;
-      rebuild();
-    });
-    number('object-segments', data.segments, 1, 12, (value) => {
-      data.segments = Math.round(value);
-      rebuild();
-    });
+    number(
+      'object-radius',
+      () => data.radius * 100,
+      0,
+      50,
+      (value) => {
+        data.radius = value / 100;
+        return rebuild();
+      }
+    );
+    number(
+      'object-segments',
+      () => data.segments,
+      1,
+      12,
+      (value) => {
+        data.segments = Math.round(value);
+        return rebuild();
+      }
+    );
   }
   if ($('object-detail')) {
     $('object-detail').value = data.detail;
     $('object-detail').onchange = (event) =>
       edit(() => rebuild(Number(event.target.value)));
   }
+  if ($('object-color'))
+    bindColor(panel, object.isLight ? object.color : object.material.color, {
+      edit,
+      pick,
+      status
+    });
+  if (object.isLight)
+    number(
+      'light-power',
+      () => object.intensity,
+      0,
+      10000,
+      (value) => {
+        object.intensity = value;
+      }
+    );
+  for (const [id, key, min] of [
+    ['ease-in', 'easeIn', 0],
+    ['ease-out', 'easeOut', 0],
+    ['acceleration', 'acceleration', -100]
+  ]) {
+    number(
+      id,
+      () => data[key] * 100,
+      min,
+      100,
+      (value) => {
+        data[key] = value / 100;
+      }
+    );
+  }
+  $('rotation-path').value = data.rotationPath;
+  $('rotation-path').onchange = (event) =>
+    edit(() => {
+      data.rotationPath = event.target.value;
+    });
 }

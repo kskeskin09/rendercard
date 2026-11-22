@@ -29,6 +29,7 @@ import {
 import { settingsMarkup, bindSettings } from './inspector-settings.js';
 import { createHistory } from './history.js';
 import { installPresets } from './presets.js';
+import { snapToGrid, snapToSurfaces } from './snapping.js';
 
 const $ = (id) => document.getElementById(id);
 const all = (selector) => [...document.querySelectorAll(selector)];
@@ -53,6 +54,7 @@ let presets;
 
 function status(message) {
   $('status').textContent = message;
+  $('status').title = message;
 }
 
 function single() {
@@ -104,7 +106,10 @@ function commitEdit(before) {
 function edit(callback) {
   setPlaying(false);
   const before = captureScene();
-  callback();
+  if (callback() === false) {
+    replaceScene(before);
+    return;
+  }
   commitEdit(before);
 }
 
@@ -119,7 +124,10 @@ function stepHistory(direction) {
 
 function settleObject(object, from) {
   if (from) collisions?.sweep(root, object, from);
-  collisions?.separate(root, object);
+  if (collisions?.overlaps(root, object).length) {
+    status('Katı yüzey bu düzenlemeyi engelledi.');
+    return false;
+  }
   updateExistingKey(object);
   fitParentPivots(object);
 }
@@ -128,16 +136,20 @@ function poseScene(continuous = false) {
   const animated = [];
   forObjects((object) => {
     if (object.userData.keys.length) {
-      const from =
-        continuous && collisions ? object.position.clone() : undefined;
+      const before = collisions ? capture(object) : undefined;
       poseAt(object, frame);
-      animated.push({ object, from });
+      animated.push({ object, before });
     }
   });
   if (collisions && animated.length) {
-    for (const { object, from } of animated) {
-      if (from) collisions.sweep(root, object, from);
-      collisions.separate(root, object);
+    for (const { object, before } of animated) {
+      if (continuous)
+        collisions.sweep(
+          root,
+          object,
+          new Vector3().fromArray(before.position)
+        );
+      if (collisions.overlaps(root, object).length) applyPose(object, before);
     }
   }
 }
@@ -278,6 +290,7 @@ function paintInspector() {
     '<div class="inspector-block"><label class="field">Nesne adı<input id="object-name" maxlength="80"></label></div>' +
     '<div class="inspector-block"><h3>Dönüşüm</h3>' +
     Object.entries(fields)
+      .filter(([channel]) => !object.isLight || channel === 'position')
       .map(
         ([channel, title]) =>
           '<div class="field">' +
@@ -341,7 +354,10 @@ function paintInspector() {
           object[channel][axis] =
             channel === 'rotation' ? MathUtils.degToRad(value) : value;
           if (bounds) anchorScale(object, position, scale, bounds, symmetric);
-          settleObject(object, channel === 'position' ? position : undefined);
+          return settleObject(
+            object,
+            channel === 'position' ? position : undefined
+          );
         });
       }
       refreshTransform();
@@ -349,28 +365,34 @@ function paintInspector() {
   }
   bindSettings(panel, object, {
     edit,
+    status,
+    pick: (callback) => {
+      setPlaying(false);
+      view?.pickColor(callback);
+      status('Sahnede renk almak istediğin noktaya tıkla.');
+    },
     collisionReady: Boolean(collisions),
-    changed: (changedObject) => {
-      if (changedObject) settleObject(changedObject);
+    changed: (changedObject, from) => {
+      if (changedObject && settleObject(changedObject, from) === false)
+        return false;
       paintList();
       refreshTransform();
     },
     toggleSolid: (solid, value) => {
-      solid.userData.solid = value;
-      const moved = value
-        ? (collisions?.clearSolidOverlap(root, solid) ?? [])
+      const intersections = value
+        ? collisions?.overlaps(root, solid, true)
         : [];
-      for (const object of moved) {
-        updateExistingKey(object);
-        fitParentPivots(object);
+      if (intersections?.length) {
+        const names = intersections.map((object) => object.name);
+        status(
+          'Cisim şu cisimler ile iç içe: [' +
+            names.join(', ') +
+            ']. Devam etmek için önce cisimleri birbirinden ayırın.'
+        );
+        return;
       }
-      status(
-        value
-          ? moved.length
-            ? moved.length + ' nesne katı yüzeyin dışına taşındı.'
-            : 'Katılık açıldı.'
-          : 'Katılık kapatıldı.'
-      );
+      solid.userData.solid = value;
+      status(value ? 'Katılık açıldı.' : 'Katılık kapatıldı.');
       refreshTransform();
     }
   });
@@ -414,6 +436,7 @@ function independentSelection() {
 }
 
 function refresh() {
+  view?.pickColor(undefined);
   paintList();
   paintInspector();
   updateTimeline();
@@ -522,10 +545,15 @@ function addObject(type) {
   forObjects((object) => names.add(object.name));
   while (names.has(types[type] + ' ' + index)) index++;
   const object = makeObject(type, types[type] + ' ' + index);
-  object.position.set(Math.min((index - 1) * 0.35, 2.1), 0.5, 1.7);
-  object.material.wireframe = wireframe;
+  object.position.set(
+    Math.min((index - 1) * 0.35, 2.1),
+    type === 'light' ? 3 : 0.5,
+    1.7
+  );
+  if (object.isMesh) object.material.wireframe = wireframe;
   root.add(object);
-  settleObject(object);
+  collisions?.separate(root, object);
+  if (settleObject(object) === false) return false;
   select(object);
   setMode('translate');
   status(object.name + ' eklendi.');
@@ -579,7 +607,10 @@ for (const button of all('[data-align]')) {
         const delta = new Vector3();
         delta[axis] = anchor - target.getWorldPosition(new Vector3())[axis];
         translateWorld(target, delta);
-        settleObject(target, from);
+        if (settleObject(target, from) === false) {
+          target.position.copy(from);
+          blocked = true;
+        }
         blocked ||=
           Math.abs(target.getWorldPosition(new Vector3())[axis] - anchor) >
           0.0001;
@@ -593,6 +624,7 @@ for (const button of all('[data-align]')) {
 }
 $('add-box').onclick = () => edit(() => addObject('box'));
 $('add-sphere').onclick = () => edit(() => addObject('sphere'));
+$('add-light').onclick = () => edit(() => addObject('light'));
 $('group').onclick = () => {
   if (!canGroup()) return;
   setPlaying(false);
@@ -692,6 +724,7 @@ $('duration').onchange = (event) =>
   });
 
 window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') view?.pickColor(undefined);
   shiftPressed = event.shiftKey;
   const key = event.key.toLowerCase();
   if (
@@ -881,11 +914,29 @@ function populate() {
   selected.add(box);
 }
 
+function showSnapMenu(show) {
+  $('snap-menu').hidden = !show;
+  $('snap-settings').setAttribute('aria-expanded', show);
+}
+$('snap-settings').onclick = () => showSnapMenu($('snap-menu').hidden);
+document.addEventListener('click', (event) => {
+  if (!event.target.closest('#snap-settings, #snap-menu')) showSnapMenu(false);
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') showSnapMenu(false);
+});
+$('snap-step').onchange = () => {
+  const value = $('snap-step').valueAsNumber;
+  $('snap-step').value = Number.isFinite(value)
+    ? MathUtils.clamp(value, 0.001, 100)
+    : 1;
+};
+
 populate();
 try {
   view = createViewport($('viewport'), root, {
     select,
-    editing: (direction) => {
+    editing: (direction, axis) => {
       const object = single();
       if (!object) return;
       setPlaying(false);
@@ -894,6 +945,10 @@ try {
         position: object.position.clone(),
         scale: object.scale.clone(),
         last: object.position.clone(),
+        lastPose: capture(object),
+        axes: [...(axis ?? '').toLowerCase()].filter((letter) =>
+          'xyz'.includes(letter)
+        ),
         direction,
         bounds: mode === 'scale' ? localBounds(object) : undefined
       };
@@ -913,9 +968,23 @@ try {
           drag.direction
         );
       }
-      if (mode === 'translate') collisions?.sweep(root, object, drag.last);
-      collisions?.separate(root, object);
+      if (mode === 'translate') {
+        const step = MathUtils.clamp(
+          $('snap-step').valueAsNumber || 1,
+          0.001,
+          100
+        );
+        const attached =
+          $('snap-surface').checked &&
+          snapToSurfaces(root, object, drag.axes, step, collisions);
+        if (!attached && $('snap-grid').checked)
+          snapToGrid(object, drag.axes, step);
+        collisions?.sweep(root, object, drag.last);
+      }
+      if (collisions?.overlaps(root, object).length)
+        applyPose(object, drag.lastPose);
       drag.last.copy(object.position);
+      drag.lastPose = capture(object);
       refreshTransform();
     },
     moved: () => {

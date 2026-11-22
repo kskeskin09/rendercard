@@ -107,7 +107,14 @@ export function translateWorld(object, delta) {
   object.updateWorldMatrix(true, true);
 }
 
-export function groundObject(object) {
+export function groundObject(object, pointMode = 'edge') {
+  if (pointMode === 'center') {
+    translateWorld(
+      object,
+      new Vector3(0, -object.getWorldPosition(new Vector3()).y, 0)
+    );
+    return;
+  }
   object.updateWorldMatrix(true, true);
   const point = new Vector3();
   let low = Infinity;

@@ -1,4 +1,7 @@
 const icons = {
+  light:
+    '<circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M19 5l-2 2M7 17l-2 2"/>',
+  snap: '<path d="M5 3v18M12 3v18M19 3v18M3 5h18M3 12h18M3 19h18"/>',
   undo: '<path d="M9 6 4 11l5 5M4 11h10a5 5 0 0 1 0 10"/>',
   redo: '<path d="m15 6 5 5-5 5m5-5H10a5 5 0 0 0 0 10"/>',
   center:

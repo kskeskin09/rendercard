@@ -91,7 +91,8 @@ function collect(object, excluded) {
     if (data.type !== 'mesh') {
       shapes.push({
         ...shapeFor(mesh.geometry, mesh.matrixWorld, data),
-        solid
+        solid,
+        object: mesh
       });
       return;
     }
@@ -103,26 +104,28 @@ function collect(object, excluded) {
       if (!partGeometry.has(part))
         partGeometry.set(part, geometry(part.type, part.detail, part));
       matrix.fromArray(part.matrix).premultiply(parent);
-      shapes.push({ ...shapeFor(partGeometry.get(part), matrix, part), solid });
+      shapes.push({
+        ...shapeFor(partGeometry.get(part), matrix, part),
+        solid,
+        object: mesh
+      });
     }
   });
   return shapes;
 }
 
-function pairs(root, moving, onlySolid = false) {
+function pairs(root, moving, any = false) {
   const excluded = new Set();
   moving.traverse((object) => excluded.add(object));
   let hasSolid = solidInHierarchy(moving);
   root.traverse((object) => {
     hasSolid ||= Boolean(object.userData.solid);
   });
-  if (!ready || !hasSolid) return [];
+  if (!ready || (!hasSolid && !any)) return [];
   const movingShapes = collect(moving, new Set());
   const others = collect(root, excluded);
   return movingShapes.flatMap((a) =>
-    others
-      .filter((b) => b.solid || (!onlySolid && a.solid))
-      .map((b) => ({ a, b }))
+    others.filter((b) => any || b.solid || a.solid).map((b) => ({ a, b }))
   );
 }
 
@@ -137,8 +140,70 @@ function contact(a, b) {
   );
 }
 
-export function separate(root, moving, onlySolid = false) {
-  const candidates = pairs(root, moving, onlySolid);
+function visible(object) {
+  for (let node = object; node; node = node.parent)
+    if (!node.visible) return false;
+  return true;
+}
+
+export function touches(root, object) {
+  return pairs(root, object, true).some(({ a, b }) => {
+    if (!visible(b.object)) return false;
+    const hit = contact(a, b);
+    return hit && Math.abs(hit.distance) <= tolerance;
+  });
+}
+
+export function snapContact(root, object, axes, threshold) {
+  const candidates = pairs(root, object, true);
+  let closest;
+  for (const { a, b } of candidates) {
+    if (
+      !visible(b.object) ||
+      !a.bounds.clone().expandByScalar(threshold).intersectsBox(b.bounds)
+    )
+      continue;
+    const hit = contact(a, b);
+    for (const axis of axes) {
+      for (const sign of [-1, 1]) {
+        const direction = new Vector3();
+        direction[axis] = sign;
+        let distance;
+        if (hit && hit.distance < -tolerance) {
+          const projected = direction.dot(hit.normal2);
+          if (projected > tolerance) distance = -hit.distance / projected;
+        } else {
+          const impact = a.shape.castShape(
+            a.position,
+            a.rotation,
+            direction,
+            b.shape,
+            b.position,
+            b.rotation,
+            stationary,
+            0,
+            threshold,
+            false
+          );
+          distance = impact?.time_of_impact;
+        }
+        if (
+          Number.isFinite(distance) &&
+          distance >= 0 &&
+          distance <= threshold &&
+          (!closest || distance < closest.distance)
+        )
+          closest = { direction, distance };
+      }
+    }
+  }
+  if (!closest) return false;
+  translateWorld(object, closest.direction.multiplyScalar(closest.distance));
+  return true;
+}
+
+export function separate(root, moving) {
+  const candidates = pairs(root, moving);
   if (!candidates.length) return false;
   const total = new Vector3();
   const offset = new Vector3();
@@ -209,13 +274,14 @@ export function sweep(root, moving, from) {
   moving.position.lerpVectors(from, to, time);
 }
 
-export function clearSolidOverlap(root, solid) {
-  const moved = [];
-  for (let child = solid; child !== root; child = child.parent) {
-    for (const sibling of child.parent.children) {
-      if (sibling !== child && separate(root, sibling, true))
-        moved.push(sibling);
-    }
+export function overlaps(root, object, any = false) {
+  const objects = new Set();
+  for (const { a, b } of pairs(root, object, any)) {
+    if (
+      a.bounds.intersectsBox(b.bounds) &&
+      contact(a, b)?.distance < -tolerance
+    )
+      objects.add(b.object);
   }
-  return moved;
+  return [...objects];
 }
