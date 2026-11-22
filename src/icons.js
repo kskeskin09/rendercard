@@ -1,4 +1,8 @@
 const icons = {
+  undo: '<path d="M9 6 4 11l5 5M4 11h10a5 5 0 0 1 0 10"/>',
+  redo: '<path d="m15 6 5 5-5 5m5-5H10a5 5 0 0 0 0 10"/>',
+  center:
+    '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>',
   layers: '<path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/>',
   folder:
     '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',

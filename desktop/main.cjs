@@ -66,7 +66,7 @@ function serveEditor() {
       const headers = new Headers(response.headers);
       headers.set(
         'Content-Security-Policy',
-        "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src 'self'"
+        "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src 'self'"
       );
       return new Response(response.body, { status: response.status, headers });
     } catch {

@@ -70,6 +70,14 @@ export function createViewport(
   rim.position.set(5, 4, -8);
   scene.add(rim);
 
+  let symmetricScale = false;
+  renderer.domElement.addEventListener(
+    'pointermove',
+    (event) => {
+      symmetricScale = event.shiftKey;
+    },
+    { capture: true }
+  );
   const transform = new TransformControls(camera, renderer.domElement);
   transform.setSize(0.78);
   const transformHelper = transform.getHelper();
@@ -77,8 +85,16 @@ export function createViewport(
   transform.addEventListener('dragging-changed', (event) => {
     orbit.enabled = !event.value;
   });
-  transform.addEventListener('objectChange', change);
-  transform.addEventListener('mouseDown', editing);
+  transform.addEventListener('objectChange', () => change(symmetricScale));
+  transform.addEventListener('mouseDown', () => {
+    const direction =
+      transform.mode === 'scale' && transform.axis !== 'XYZ'
+        ? transform.pointStart
+            .clone()
+            .applyQuaternion(transform.worldQuaternionStart.clone().invert())
+        : undefined;
+    editing(direction);
+  });
   transform.addEventListener('mouseUp', moved);
 
   const outline = new THREE.BoxHelper(new THREE.Object3D(), '#d8f882');
@@ -86,6 +102,20 @@ export function createViewport(
   outline.material.opacity = 0.56;
   outline.visible = false;
   scene.add(outline);
+  const pivots = new THREE.Points(
+    new THREE.BufferGeometry(),
+    new THREE.PointsMaterial({
+      color: '#f6be65',
+      size: 8,
+      sizeAttenuation: false,
+      depthTest: false
+    })
+  );
+  pivots.frustumCulled = false;
+  pivots.renderOrder = 10;
+  pivots.visible = false;
+  scene.add(pivots);
+  let showPivots = false;
   let selected;
   let mode = 'select';
 
@@ -129,6 +159,7 @@ export function createViewport(
   });
   renderer.domElement.addEventListener('pointercancel', () => {
     down = undefined;
+    if (transform.dragging) transform.pointerUp(null);
   });
 
   let recordingSize = false;
@@ -170,6 +201,25 @@ export function createViewport(
     transformHelper.visible = !clean && Boolean(transform.object);
     outline.visible = !clean && Boolean(selected);
     if (outline.visible) outline.setFromObject(selected);
+    pivots.visible = !clean && showPivots;
+    if (pivots.visible) {
+      const positions = [];
+      root.updateMatrixWorld();
+      root.traverse((object) => {
+        if (object !== root) {
+          point.setFromMatrixPosition(object.matrixWorld);
+          positions.push(point.x, point.y, point.z);
+        }
+      });
+      let buffer = pivots.geometry.getAttribute('position');
+      if (!buffer || buffer.array.length !== positions.length) {
+        pivots.geometry.dispose();
+        buffer = new THREE.Float32BufferAttribute(positions.length, 3);
+        pivots.geometry.setAttribute('position', buffer);
+      }
+      buffer.array.set(positions);
+      buffer.needsUpdate = true;
+    }
     renderer.render(scene, camera);
   }
 
@@ -180,6 +230,18 @@ export function createViewport(
   return {
     render,
     reset,
+    captureCamera: () => ({
+      position: camera.position.clone(),
+      target: orbit.target.clone()
+    }),
+    restoreCamera(state) {
+      camera.position.copy(state.position);
+      orbit.target.copy(state.target);
+      orbit.update();
+    },
+    showPivots: (value) => {
+      showPivots = value;
+    },
     updateSelection,
     lockSize,
     canvas: renderer.domElement

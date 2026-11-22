@@ -10,20 +10,65 @@ import {
   Quaternion,
   Vector3
 } from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import {
+  mergeGeometries,
+  mergeVertices
+} from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { applyTile, tiles } from './tiles.js';
+import { fitPivot } from './spatial.js';
 
 export const types = { box: 'Kutu', sphere: 'Küre', group: 'Grup', mesh: 'Ağ' };
 export const levels = [12, 24, 48];
+export const projectVersion = 2;
 const channels = ['position', 'rotation', 'scale'];
 
-export function geometry(type, detail = 24) {
-  return type === 'box'
-    ? new BoxGeometry(1, 1, 1)
-    : new SphereGeometry(0.5, detail, detail / 2);
+const settingsDefaults = {
+  radius: 0,
+  segments: 4,
+  solid: false,
+  finish: 'color',
+  tile: 'checker',
+  tileScale: 1,
+  pivot: [0, 0, 0],
+  offset: [0, 0, 0]
+};
+
+function settingsOf(data = {}) {
+  return Object.fromEntries(
+    Object.entries(settingsDefaults).map(([key, value]) => [
+      key,
+      structuredClone(data[key] ?? value)
+    ])
+  );
 }
 
-function material(color) {
-  return new MeshStandardMaterial({ color, roughness: 0.62, metalness: 0.07 });
+export function geometry(type, detail = 24, settings = settingsDefaults) {
+  let result;
+  if (type === 'sphere') result = new SphereGeometry(0.5, detail, detail / 2);
+  else if (settings.radius > 0) {
+    const rounded = new RoundedBoxGeometry(
+      1,
+      1,
+      1,
+      settings.segments,
+      settings.radius
+    );
+    result = mergeVertices(rounded);
+    rounded.dispose();
+  } else result = new BoxGeometry(1, 1, 1);
+  if (settings.offset) result.translate(...settings.offset);
+  return result;
+}
+
+function material(color, settings) {
+  const result = new MeshStandardMaterial({
+    color,
+    roughness: 0.62,
+    metalness: 0.07
+  });
+  applyTile(result, settings);
+  return result;
 }
 
 export function materialsOf(object) {
@@ -40,32 +85,39 @@ export function makeObject(
   type,
   name = types[type],
   color = type === 'box' ? '#b8a8f3' : '#dcf878',
-  detail = 24
+  detail = 24,
+  data
 ) {
+  const settings = settingsOf(data);
   const object =
     type === 'group'
       ? new Group()
-      : configureMesh(new Mesh(geometry(type, detail), material(color)));
+      : configureMesh(
+          new Mesh(geometry(type, detail, settings), material(color, settings))
+        );
   object.name = name;
-  object.userData = { type, detail, keys: [] };
+  object.userData = { type, detail, keys: [], ...settings };
   return object;
 }
 
-function makeJoinedMesh(parts, name = 'Birleşik ağ') {
+function makeJoinedMesh(parts, name = 'Birleşik ağ', data) {
+  const settings = settingsOf(data);
   const matrix = new Matrix4();
   const geometries = parts.map((part) =>
-    geometry(part.type, part.detail).applyMatrix4(matrix.fromArray(part.matrix))
+    geometry(part.type, part.detail, part).applyMatrix4(
+      matrix.fromArray(part.matrix)
+    )
   );
   const merged = mergeGeometries(geometries, true);
   geometries.forEach((part) => part.dispose());
   const mesh = configureMesh(
     new Mesh(
-      merged,
-      parts.map((part) => material(part.color))
+      merged.translate(...settings.offset),
+      parts.map((part) => material(part.color, part))
     )
   );
   mesh.name = name;
-  mesh.userData = { type: 'mesh', keys: [], parts };
+  mesh.userData = { type: 'mesh', keys: [], parts, ...settings };
   return mesh;
 }
 
@@ -77,6 +129,7 @@ export function joinMeshes(objects) {
     object.updateMatrix();
     const matrix = new Matrix4().multiplyMatrices(offset, object.matrix);
     if (object.userData.type === 'mesh') {
+      matrix.multiply(new Matrix4().makeTranslation(...object.userData.offset));
       return object.userData.parts.map((part) => ({
         ...part,
         matrix: new Matrix4()
@@ -89,29 +142,36 @@ export function joinMeshes(objects) {
       {
         type: object.userData.type,
         detail: object.userData.detail,
+        ...settingsOf(object.userData),
         color: '#' + object.material.color.getHexString(),
         matrix: matrix.toArray()
       }
     ];
   });
   const merged = makeJoinedMesh(parts);
+  merged.userData.solid = objects.some((object) => object.userData.solid);
   merged.position.copy(center);
   objects.forEach(disposeObject);
   parent.add(merged);
+  fitPivot(merged);
   return merged;
 }
 
 export function setDetail(object, detail) {
   object.geometry.dispose();
-  object.geometry = geometry(object.userData.type, detail);
+  object.geometry = geometry(object.userData.type, detail, object.userData);
   object.userData.detail = detail;
+  fitPivot(object);
 }
 
 export function disposeObject(object) {
   object.traverse((child) => {
     if (!child.isMesh) return;
     child.geometry.dispose();
-    materialsOf(child).forEach((material) => material.dispose());
+    materialsOf(child).forEach((material) => {
+      material.map?.dispose();
+      material.dispose();
+    });
   });
   object.removeFromParent();
 }
@@ -157,20 +217,25 @@ export function poseAt(object, frame) {
   object.quaternion.slerpQuaternions(start, end, t);
 }
 
+export function encodeObject(object) {
+  return {
+    name: object.name,
+    ...object.userData,
+    ...capture(object),
+    color:
+      object.isMesh && object.userData.type !== 'mesh'
+        ? '#' + object.material.color.getHexString()
+        : undefined,
+    children: object.children.map(encodeObject)
+  };
+}
+
 export function encodeProject(root, duration) {
-  function encode(object) {
-    return {
-      name: object.name,
-      ...object.userData,
-      ...capture(object),
-      color:
-        object.isMesh && object.userData.type !== 'mesh'
-          ? '#' + object.material.color.getHexString()
-          : undefined,
-      children: object.children.map(encode)
-    };
-  }
-  return { version: 1, duration, objects: root.children.map(encode) };
+  return {
+    version: projectVersion,
+    duration,
+    objects: root.children.map(encodeObject)
+  };
 }
 
 export function decodeProject(project) {
@@ -182,11 +247,32 @@ export function decodeProject(project) {
     value.scale.every((x) => x > 0);
   const validFrame = (value) =>
     Number.isInteger(value) && value >= 0 && value <= 1800;
+  const validSettings = (data) =>
+    (data.radius == null ||
+      (Number.isFinite(data.radius) &&
+        data.radius >= 0 &&
+        data.radius <= 0.5)) &&
+    (data.segments == null ||
+      (Number.isInteger(data.segments) &&
+        data.segments >= 1 &&
+        data.segments <= 12)) &&
+    (data.solid == null || typeof data.solid === 'boolean') &&
+    (data.finish == null || ['color', 'tile'].includes(data.finish)) &&
+    (data.tile == null || Object.hasOwn(tiles, data.tile)) &&
+    (data.tileScale == null ||
+      (Number.isFinite(data.tileScale) &&
+        data.tileScale >= 0.05 &&
+        data.tileScale <= 20)) &&
+    (data.pivot == null ||
+      (numericTuple(data.pivot) &&
+        data.pivot.every((value) => [-1, 0, 1].includes(value)))) &&
+    (data.offset == null || numericTuple(data.offset));
   const validPrimitive = (data) =>
     data &&
     (data.type === 'box' || data.type === 'sphere') &&
     /^#[0-9a-f]{6}$/i.test(data.color) &&
-    levels.includes(data.detail);
+    levels.includes(data.detail) &&
+    validSettings(data);
   const validPart = (part) =>
     validPrimitive(part) &&
     Array.isArray(part.matrix) &&
@@ -199,6 +285,7 @@ export function decodeProject(project) {
       !Object.hasOwn(types, data.type) ||
       typeof data.name !== 'string' ||
       !validPose(data) ||
+      !validSettings(data) ||
       !Array.isArray(data.keys) ||
       !Array.isArray(data.children) ||
       data.keys.some(
@@ -221,15 +308,15 @@ export function decodeProject(project) {
   function decode(data) {
     const object =
       data.type === 'mesh'
-        ? makeJoinedMesh(structuredClone(data.parts), data.name)
-        : makeObject(data.type, data.name, data.color, data.detail);
+        ? makeJoinedMesh(structuredClone(data.parts), data.name, data)
+        : makeObject(data.type, data.name, data.color, data.detail, data);
     applyPose(object, data);
     object.userData.keys = structuredClone(data.keys);
     for (const child of data.children) object.add(decode(child));
     return object;
   }
   if (
-    project?.version !== 1 ||
+    ![1, projectVersion].includes(project?.version) ||
     !validFrame(project.duration) ||
     project.duration < 1 ||
     !Array.isArray(project.objects)
@@ -260,6 +347,7 @@ export function groupObjects(objects) {
       );
     group.add(object);
   }
+  fitPivot(group);
   return group;
 }
 

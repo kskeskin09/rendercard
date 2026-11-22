@@ -201,26 +201,27 @@ h3 {
 }
 .shape-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: 1fr;
+  gap: 5px;
 }
 .shape {
-  flex-direction: column;
+  flex-direction: row;
+  justify-content: flex-start;
   gap: 6px;
   border: 1px solid var(--line);
   background: #fff;
-  height: 87px;
+  height: 39px;
   font-size: 13px;
 }
 .shape-art {
-  width: 36px;
-  height: 35px;
+  width: 25px;
+  height: 25px;
   justify-content: center;
   border-radius: 9px;
 }
 .shape-art svg {
-  width: 25px;
-  height: 25px;
+  width: 17px;
+  height: 17px;
 }
 .box-art {
   background: #ebe5ff;
@@ -765,6 +766,132 @@ kbd {
 .key-actions {
   display: flex;
   gap: 4px;
+}
+.history-actions {
+  display: flex;
+  gap: 3px;
+}
+.align-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.align-actions span {
+  margin-right: auto;
+}
+.align-actions button {
+  min-height: 26px;
+  min-width: 26px;
+  padding: 0;
+}
+.history-actions .quiet {
+  padding-inline: 7px;
+}
+.preset-wrap {
+  position: relative;
+}
+#presets {
+  font-size: 12px;
+  min-height: 29px;
+}
+#presets svg {
+  width: 12px;
+}
+#preset-menu {
+  top: 34px;
+  min-width: 152px;
+  max-width: calc(100vw - 24px);
+}
+#preset-items {
+  max-height: 228px;
+  overflow-y: auto;
+}
+#preset-items button {
+  display: block;
+  max-width: 200px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#create-preset {
+  border-top: 1px solid var(--line);
+}
+.object-menu {
+  position: fixed;
+  right: auto;
+}
+.preset-editor {
+  padding: 10px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f1f7e4;
+}
+.preset-editor button {
+  width: 100%;
+  margin-bottom: 4px;
+}
+.check-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.inspector .check-field input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #87a932;
+}
+.ground-action {
+  width: 100%;
+  margin-bottom: 3px;
+}
+.pivot-fields select {
+  padding-inline: 3px;
+}
+#preset-dialog {
+  color: var(--ink);
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px;
+  width: min(360px, 90vw);
+}
+#preset-dialog::backdrop {
+  background: rgb(21 26 20 / 54%);
+}
+#preset-name {
+  font: inherit;
+  width: 100%;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+#preset-error {
+  color: #862e29;
+  margin-top: 8px;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 15px;
+}
+@media (max-width: 820px) {
+  #show-pivots span:last-child {
+    display: none;
+  }
+}
+@media (max-width: 420px) {
+  .top-actions #save span:last-child,
+  #export .render-label,
+  #export [data-icon='chevron'] {
+    display: none;
+  }
 }
 @media (max-width: 900px) {
   .key-actions #add-key span:last-child {

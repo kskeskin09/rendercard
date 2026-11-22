@@ -20,6 +20,24 @@
         <span data-icon="folder"></span> <span>Yeni sahne</span>
       </div>
       <div class="top-actions">
+        <div class="history-actions" aria-label="Düzenleme geçmişi">
+          <button
+            id="undo"
+            class="quiet"
+            data-icon="undo"
+            title="Geri al (Ctrl+Z)"
+            aria-label="Geri al"
+            disabled
+          ></button>
+          <button
+            id="redo"
+            class="quiet"
+            data-icon="redo"
+            title="Yinele (Ctrl+Y)"
+            aria-label="Yinele"
+            disabled
+          ></button>
+        </div>
         <button
           id="open"
           class="quiet"
@@ -32,8 +50,14 @@
           <span data-icon="save"></span><span>Kaydet</span>
         </button>
         <div class="export-wrap">
-          <button id="export" class="primary" aria-expanded="false">
-            <span data-icon="camera"></span> Render al
+          <button
+            id="export"
+            class="primary"
+            aria-expanded="false"
+            aria-label="Render al"
+          >
+            <span data-icon="camera"></span
+            ><span class="render-label">Render al</span>
             <span data-icon="chevron"></span>
           </button>
           <div id="export-menu" class="menu" hidden>
@@ -49,8 +73,18 @@
     <main class="workspace">
       <aside class="sidebar" aria-label="Sahne araçları">
         <div class="panel-heading">
-          <h2>Nesne ekle</h2>
-          <span data-icon="plus"></span>
+          <h2>Nesneler</h2>
+          <div class="preset-wrap">
+            <button id="presets" class="quiet" aria-expanded="false">
+              Presetler <span data-icon="chevron"></span>
+            </button>
+            <div id="preset-menu" class="menu" hidden>
+              <div id="preset-items"></div>
+              <button id="create-preset">
+                <span data-icon="plus"></span> Preset oluştur
+              </button>
+            </div>
+          </div>
         </div>
         <div class="shape-grid">
           <button id="add-box" class="shape">
@@ -59,6 +93,13 @@
             <span class="shape-art sphere-art" data-icon="sphere"></span>Küre
           </button>
         </div>
+        <section id="preset-editor" class="preset-editor" hidden>
+          <h3>Preset sahnesi</h3>
+          <button id="save-preset" class="primary">
+            <span data-icon="save"></span> Preset kaydet
+          </button>
+          <button id="cancel-preset" class="quiet">İptal</button>
+        </section>
         <div class="scene-section">
           <div class="panel-heading">
             <h2>Sahne</h2>
@@ -85,6 +126,18 @@
             <span data-icon="trash"></span> Sil
           </button>
         </div>
+        <div class="align-actions" aria-label="Merkez noktalarını hizala">
+          <span>Hizala</span>
+          <button class="quiet" data-align="x" aria-label="X ekseninde hizala">
+            X
+          </button>
+          <button class="quiet" data-align="y" aria-label="Y ekseninde hizala">
+            Y
+          </button>
+          <button class="quiet" data-align="z" aria-label="Z ekseninde hizala">
+            Z
+          </button>
+        </div>
         <p class="selection-tip">
           <kbd>Shift</kbd> ile birden fazla nesne seç.
         </p>
@@ -100,6 +153,15 @@
               title="Üçgen kenarlarını göster"
             >
               <span data-icon="mesh"></span><span>Tel kafes</span></button
+            ><button
+              id="show-pivots"
+              class="quiet"
+              aria-pressed="false"
+              title="Merkez noktasını göster"
+              aria-label="Merkez noktasını göster"
+            >
+              <span data-icon="center"></span
+              ><span>Merkez noktası</span></button
             ><button
               id="reset-view"
               class="quiet"
@@ -174,17 +236,17 @@
               <button
                 id="add-key"
                 class="quiet key-button"
-                title="Seçili nesneye anahtar kare ekle"
-                aria-label="Anahtar kare ekle"
+                title="Seçili nesnenin pozunu bu kareye kaydet"
+                aria-label="Kare ekle"
               >
-                <span data-icon="diamond"></span><span>Anahtar ekle</span>
+                <span data-icon="diamond"></span><span>Kare ekle</span>
               </button>
               <button
                 id="remove-key"
                 class="quiet key-button"
                 data-icon="trash"
-                aria-label="Anahtar kareyi sil"
-                title="Anahtar kareyi sil"
+                aria-label="Kaydedilen kareyi sil"
+                title="Kaydedilen kareyi sil"
               ></button>
             </div>
           </div>
@@ -230,6 +292,26 @@
       <span><i></i> <span id="status" role="status">Hazır</span></span
       ><span id="mesh-count"></span>
     </footer>
+    <div id="object-menu" class="menu object-menu" hidden>
+      <button id="object-to-preset">
+        <span data-icon="save"></span> Preset olarak kaydet
+      </button>
+    </div>
+    <dialog id="preset-dialog" aria-labelledby="preset-title">
+      <form id="preset-form">
+        <h2 id="preset-title">Preset olarak kaydet</h2>
+        <label class="field"
+          >Preset adı<input id="preset-name" maxlength="60" required
+        /></label>
+        <p id="preset-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="close-preset-dialog" class="quiet" type="button">
+            İptal
+          </button>
+          <button class="primary" type="submit">Kaydet</button>
+        </div>
+      </form>
+    </dialog>
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>
