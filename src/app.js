@@ -458,22 +458,36 @@ window.addEventListener('keydown', (event) => {
   }
 });
 
-function download(blob, name) {
+async function saveOutput(blob, name, label) {
+  if (window.rendercardDesktop) {
+    try {
+      const saved = await window.rendercardDesktop.saveFile(
+        name,
+        await blob.arrayBuffer()
+      );
+      status(saved ? label + ' kaydedildi.' : 'Kaydetme iptal edildi.');
+    } catch (error) {
+      console.error('Dosya kaydedilemedi.', error);
+      status('Dosya kaydedilemedi.');
+    }
+    return;
+  }
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
   link.href = url;
   link.download = name;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 15_000);
+  status(label + ' indirildi.');
 }
 
 $('save').onclick = () => {
   const content = JSON.stringify(encodeProject(root, duration), null, 2);
-  download(
+  void saveOutput(
     new Blob([content], { type: 'application/json' }),
-    'sahne.rendercard.json'
+    'sahne.rendercard.json',
+    'Proje'
   );
-  status('Proje indirildi.');
 };
 $('open').onclick = () => $('project-file').click();
 $('project-file').onchange = async (event) => {
@@ -515,8 +529,8 @@ $('png').onclick = () => {
   if (!view) return;
   view.render(true);
   view.canvas.toBlob((blob) => {
-    if (blob) download(blob, 'rendercard.png');
-    status(blob ? 'PNG indirildi.' : 'Görsel oluşturulamadı.');
+    if (blob) void saveOutput(blob, 'rendercard.png', 'PNG');
+    else status('Görsel oluşturulamadı.');
   }, 'image/png');
 };
 
@@ -545,8 +559,7 @@ async function recordVideo() {
       if (frame % 10 === 0)
         status('Animasyon hazırlanıyor · ' + frame + ' / ' + duration);
     });
-    download(blob, name);
-    status('Animasyon indirildi.');
+    await saveOutput(blob, name, 'Animasyon');
   } catch (error) {
     console.error('Video dışa aktarılamadı.', error);
     status(

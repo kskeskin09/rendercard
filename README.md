@@ -1,19 +1,25 @@
 # Rendercard
 
-Rendercard, sade bir Türkçe arayüzle 3B sahne oluşturmayı, canlandırmayı ve dışa aktarmayı sağlayan bir tarayıcı uygulamasıdır.
+Rendercard, sade bir Türkçe arayüzle 3B sahne oluşturmayı, canlandırmayı ve dışa aktarmayı sağlayan bir Windows uygulamasıdır.
 
-## Çalıştırma
+## Windows'ta açma
 
-Node.js 24 ve WebGL 2 destekli bir tarayıcı kullanın.
+[GitHub Sürümleri](https://github.com/kskeskin09/rendercard/releases/latest) sayfasından `Rendercard-…-Windows-x64.exe` dosyasını indirip çift tıklayın. Windows x64 sürümü taşınabilirdir. Kurulum, Node.js, internet bağlantısı veya yerel sunucu gerektirmez.
+
+PNG, video ve JSON çıktılarının konumunu Windows kaydetme penceresinden seçebilirsiniz.
+
+## Kaynak koddan çalıştırma
+
+Windows'ta Node.js 24 kullanın.
 
 ```sh
 npm ci
-npm run dev
+npm run desktop
 ```
 
-Vite'ın terminalde verdiği adresi açın. Üretim derlemesi için `npm run build`, derlemeyi yerelde açmak için `npm run preview` çalıştırın.
+Windows paketini oluşturmak için `npm run build:windows` çalıştırın. Çıktı `release/` klasörüne yazılır. Tarayıcıda arayüz geliştirmek için `npm run dev` kullanılabilir.
 
-Video dışa aktarımı için WebCodecs destekli bir tarayıcı gerekir. Animasyon 30 FPS olarak WebM veya MP4 biçiminde yazılır. [Mediabunny video yazma belgeleri](https://mediabunny.dev/guide/writing-media-files)
+Animasyon 30 FPS olarak WebM veya MP4 biçiminde yazılır. Tarayıcı sürümünde video çıktısı WebCodecs desteği gerektirir. [Mediabunny video yazma belgeleri](https://mediabunny.dev/guide/writing-media-files)
 
 ## İlk sahnenizi yapın
 
@@ -21,7 +27,7 @@ Video dışa aktarımı için WebCodecs destekli bir tarayıcı gerekir. Animasy
 2. Sahne listesinden aynı düzeydeki nesneleri **Shift** ile seçip **Grupla** düğmesine tıklayın. Grup ortak bir dönüşümle hareket eder ve alt nesneler düzenlenebilir kalır.
 3. **Tel kafes** düğmesiyle üçgen kenarlarını görün. Kutunun altı yüzü ikişer üçgenden oluşur. Kürede **Yüzey ayrıntısı** üçgen yoğunluğunu değiştirir. Toplam üçgen sayısı alt çubukta görünür.
 4. Nesneyi seçip ilk pozda **Anahtar ekle** düğmesine tıklayın. Zaman çizelgesinde başka bir kareye gidin, nesneyi taşıyın, döndürün veya ölçekleyin ve ikinci anahtarı ekleyin. **Oynat** ile aradaki hareketi izleyin.
-5. **Kaydet** ile düzenlenebilir JSON projesini indirin. **Render al** menüsünden PNG veya tarayıcınızın desteklediği video biçimini indirin.
+5. **Kaydet** ile düzenlenebilir JSON projesini kaydedin. **Render al** menüsünden PNG veya video oluşturun.
 
 Örnek sahnedeki **Kutu** hazır bir animasyona sahiptir. Klavye kısayolları `Q` seçim, `G` taşıma, `R` döndürme, `S` ölçekleme, `K` anahtar ekleme ve `Boşluk` oynatma içindir.
 

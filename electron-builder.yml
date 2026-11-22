@@ -1,0 +1,13 @@
+appId: io.github.kskeskin09.rendercard
+productName: Rendercard
+directories:
+  output: release
+files:
+  - dist/**/*
+  - desktop/**/*
+  - package.json
+win:
+  icon: desktop/icon.ico
+  signAndEditExecutable: false
+portable:
+  artifactName: Rendercard-${version}-Windows-${arch}.exe
