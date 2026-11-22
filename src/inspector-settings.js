@@ -3,6 +3,7 @@ import { changePivot, groundObject } from './spatial.js';
 import { setDetail } from './model.js';
 import { colorMarkup, bindColor } from './color-editor.js';
 import { rotationPaths } from './motion.js';
+import { speedMarkup, bindSpeed } from './speed-graph.js';
 
 const axes = ['x', 'y', 'z'];
 const choices = [
@@ -59,7 +60,7 @@ export function settingsMarkup(object) {
         '<label class="field" title="1/4, desenin dörtte bir ölçeğe inmesi ve daha sık tekrarlanması demektir.">Tile ölçeği<span class="fraction">1 / <input id="object-tile-scale" aria-label="Tile ölçeği paydası" type="number" min="1" max="1000" step="any"></span></label></div>'
       : type === 'light'
         ? colorMarkup +
-          '<label class="field" title="Noktasal ışığın sahneyi ne kadar aydınlattığını ayarlar.">Işık gücü<input id="light-power" type="number" min="0" max="10000" step="any"></label>'
+          '<label class="field" title="%0 düşük ama görünür güç, %100 yüksek parlaklık.">Işık gücü (%)<input id="light-power" type="number" min="0" max="100" step="any"></label>'
         : '') +
     '</div>' +
     (type === 'box'
@@ -76,9 +77,23 @@ export function settingsMarkup(object) {
         '</select></label></div>'
       : '') +
     '<div class="inspector-block"><h3>Animasyon</h3>' +
-    '<label class="field" title="Yüksek değer, kareler arasındaki hareketi daha yavaş başlatır.">Yumuşak hızlanma (%)<input id="ease-in" type="number" min="0" max="100"></label>' +
-    '<label class="field" title="Yüksek değer, hedef kareye yaklaşırken hareketi daha çok yavaşlatır.">Yumuşak yavaşlama (%)<input id="ease-out" type="number" min="0" max="100"></label>' +
-    '<label class="field" title="Her geçiş boyunca konum hızını değiştirir. Artı değer hızlandırır, eksi değer yavaşlatır. Varış karesi aynı kalır.">Konum ivmesi (%)<input id="acceleration" type="number" min="-100" max="100"></label>' +
+    '<label class="field" title="Özel bir sahne seçilirse nesne o animasyon seçiliyken görünür.">Nesnenin sahnesi<select id="scene-clip"></select></label>' +
+    '<label class="field">Konum hareketi<select id="position-motion"><option value="keys">Karelerle hareket</option><option value="physics">Fiziksel ivme</option></select></label>' +
+    '<div id="physics-controls" hidden><div class="field" title="Dünya eksenleri. Cisim durgun başlar. Örneğin Y = -10 bir saniyede 5 metre aşağı hareket eder.">İvme (m/s²)<div class="axis-fields">' +
+    axes
+      .map(
+        (axis) =>
+          '<label><b>' +
+          axis.toUpperCase() +
+          '</b><input type="number" aria-label="İvme ' +
+          axis.toUpperCase() +
+          ' (m/s²)" data-acceleration="' +
+          axis +
+          '" min="-1000" max="1000" step="any"></label>'
+      )
+      .join('') +
+    '</div></div><p class="selection-tip">Hız grafiği bu modda dönüşü ve ölçeği etkiler.</p></div>' +
+    speedMarkup +
     '<label class="field" title="Kısa veya uzun dönüş yolunu seç. Bir eksende belirli yönde ya da tam tur dönmek için açıları izle seçeneğini kullan.">Dönüş yolu<select id="rotation-path">' +
     options(Object.entries(rotationPaths)) +
     '</select></label></div>'
@@ -88,7 +103,17 @@ export function settingsMarkup(object) {
 export function bindSettings(
   panel,
   object,
-  { edit, changed, toggleSolid, collisionReady, pick, status }
+  {
+    edit,
+    setMotion,
+    scenes,
+    sceneChanged,
+    changed,
+    toggleSolid,
+    collisionReady,
+    pick,
+    status
+  }
 ) {
   const $ = (id) => panel.querySelector('#' + id);
   const data = object.userData;
@@ -119,7 +144,7 @@ export function bindSettings(
   $('object-visible').onclick = () =>
     edit(() => {
       data.hidden = !data.hidden;
-      object.visible = !data.hidden;
+      object.visible = !data.hidden && object.clipActive !== false;
       visibility();
     });
   for (const [index, select] of [
@@ -208,28 +233,51 @@ export function bindSettings(
   if (object.isLight)
     number(
       'light-power',
-      () => object.intensity,
+      () =>
+        Math.max(
+          0,
+          Math.min(100, Math.round((object.intensity - 0.5) / 1.795))
+        ),
       0,
-      10000,
-      (value) => {
-        object.intensity = value;
-      }
-    );
-  for (const [id, key, min] of [
-    ['ease-in', 'easeIn', 0],
-    ['ease-out', 'easeOut', 0],
-    ['acceleration', 'acceleration', -100]
-  ]) {
-    number(
-      id,
-      () => data[key] * 100,
-      min,
       100,
       (value) => {
-        data[key] = value / 100;
+        object.intensity = 0.5 + 1.795 * value;
       }
     );
+  $('position-motion').value = data.positionMode;
+  $('physics-controls').hidden = data.positionMode !== 'physics';
+  $('position-motion').onchange = (event) => {
+    setMotion(() => {
+      data.positionMode = event.target.value;
+    });
+    $('physics-controls').hidden = data.positionMode !== 'physics';
+  };
+  for (const [index, input] of [
+    ...panel.querySelectorAll('[data-acceleration]')
+  ].entries()) {
+    input.value = data.physicsAcceleration[index];
+    input.onchange = () => {
+      if (Number.isFinite(input.valueAsNumber))
+        setMotion(() => {
+          data.physicsAcceleration[index] = Math.min(
+            1000,
+            Math.max(-1000, input.valueAsNumber)
+          );
+        });
+      input.value = data.physicsAcceleration[index];
+    };
   }
+  bindSpeed(panel, data, edit, status);
+  $('scene-clip').replaceChildren(
+    new Option('Her animasyonda', ''),
+    ...scenes.map((clip) => new Option(clip.name, clip.id))
+  );
+  $('scene-clip').value = data.sceneClip ?? '';
+  $('scene-clip').onchange = (event) =>
+    edit(() => {
+      data.sceneClip = event.target.value || null;
+      sceneChanged();
+    });
   $('rotation-path').value = data.rotationPath;
   $('rotation-path').onchange = (event) =>
     edit(() => {

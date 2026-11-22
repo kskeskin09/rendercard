@@ -171,17 +171,24 @@
                 <label
                   class="check-field"
                   title="Taşırken konumu belirlenen aralığın katlarına oturtur."
-                  ><input id="snap-grid" type="checkbox" /> Tam konumlar</label
+                  ><input id="snap-grid" name="snap-mode" type="radio" /> Tam
+                  konumlar</label
                 >
                 <label
                   class="check-field"
                   title="Yakın yüzeyleri temas ettirir, yan yana sürüklerken yakın kenarları hizalar."
-                  ><input id="snap-surface" type="checkbox" /> Yüzeye
-                  yakala</label
+                  ><input id="snap-surface" name="snap-mode" type="radio" />
+                  Yüzeye yakala</label
+                >
+                <label class="check-field"
+                  ><input id="snap-off" name="snap-mode" type="radio" checked />
+                  Kapalı</label
                 >
                 <label
+                  id="snap-precision"
+                  hidden
                   class="field"
-                  title="Tam konum aralığı ve yüzeyin yakalanabileceği en büyük mesafe."
+                  title="Tam konumların arasındaki mesafe."
                   >Hassasiyet<input
                     id="snap-step"
                     type="number"
@@ -254,6 +261,9 @@
             sürükle <b>Kaydır</b>
           </div>
           <div id="engine-error" class="engine-error" hidden></div>
+          <div id="sample-preview" class="sample-preview" hidden>
+            <span></span><b></b>
+          </div>
         </div>
         <section class="timeline" aria-label="Zaman çizelgesi">
           <div class="timeline-top">
@@ -279,6 +289,40 @@
               ></button>
             </div>
             <div class="key-actions">
+              <details class="clip-menu-wrap">
+                <summary
+                  class="quiet"
+                  title="Animasyonları seç veya yeni animasyon ekle"
+                >
+                  <span data-icon="layers"></span><span>Animasyonlar</span>
+                </summary>
+                <div class="clip-menu">
+                  <label class="field"
+                    >Düzenlenen animasyon
+                    <select
+                      id="clip-active"
+                      aria-label="Düzenlenen animasyon"
+                    ></select
+                  ></label>
+                  <label class="field"
+                    >Animasyon adı <input id="clip-name" maxlength="60"
+                  /></label>
+                  <button id="clip-add" class="quiet">Animasyon ekle</button>
+                  <div
+                    id="clip-list"
+                    aria-label="Oynatılacak animasyonlar"
+                  ></div>
+                  <div class="clip-actions">
+                    <button id="clip-select-all" class="quiet">
+                      Hepsini seç</button
+                    ><button id="clip-play-selected" class="quiet">
+                      Seçileni oynat</button
+                    ><button id="clip-play-all" class="primary">
+                      Toplu oynat
+                    </button>
+                  </div>
+                </div>
+              </details>
               <button
                 id="add-key"
                 class="quiet key-button"
@@ -298,7 +342,7 @@
           </div>
           <div class="track-wrap">
             <div class="track-caption">
-              <span data-icon="layers"></span><span id="track-name"></span>
+              <span id="track-name"></span>
             </div>
             <div class="track" id="track">
               <div id="ticks" class="ticks"></div>

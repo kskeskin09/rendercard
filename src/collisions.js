@@ -86,6 +86,8 @@ function collect(object, excluded) {
   object.updateWorldMatrix(true, true);
   object.traverse((mesh) => {
     if (!mesh.isMesh || excluded.has(mesh)) return;
+    for (let node = mesh; node; node = node.parent)
+      if (node.clipActive === false) return;
     const data = mesh.userData;
     const solid = solidInHierarchy(mesh);
     if (data.type !== 'mesh') {

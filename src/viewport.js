@@ -147,11 +147,82 @@ export function createViewport(
   lightMarkers.renderOrder = 11;
   scene.add(lightMarkers);
   const visibleLights = [];
+  const samplePreview = element.querySelector('#sample-preview');
+  let previewPosition;
+  let previewRequest;
 
   function pickColor(callback) {
     sampler = callback;
     renderer.domElement.classList.toggle('sampling-color', Boolean(callback));
+    samplePreview.hidden = true;
+    previewPosition = undefined;
   }
+
+  function sampleAt(clientX, clientY) {
+    render(true);
+    const canvas = renderer.domElement;
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.max(
+      0,
+      Math.min(
+        canvas.width - 1,
+        Math.floor(((clientX - rect.left) * canvas.width) / rect.width)
+      )
+    );
+    const topY = Math.max(
+      0,
+      Math.min(
+        canvas.height - 1,
+        Math.floor(((clientY - rect.top) * canvas.height) / rect.height)
+      )
+    );
+    const gl = renderer.getContext();
+    const pixel = new Uint8Array(4);
+    gl.readPixels(
+      x,
+      canvas.height - topY - 1,
+      1,
+      1,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      pixel
+    );
+    render();
+    return (
+      '#' +
+      [...pixel.slice(0, 3)]
+        .map((channel) => channel.toString(16).padStart(2, '0'))
+        .join('')
+    );
+  }
+  renderer.domElement.addEventListener('pointermove', (event) => {
+    if (!sampler) return;
+    previewPosition = [event.clientX, event.clientY];
+    if (previewRequest != null) return;
+    previewRequest = requestAnimationFrame(() => {
+      previewRequest = undefined;
+      if (!sampler || !previewPosition) return;
+      const hex = sampleAt(...previewPosition);
+      const rect = element.getBoundingClientRect();
+      samplePreview.style.left =
+        Math.max(
+          0,
+          Math.min(rect.width - 92, previewPosition[0] - rect.left + 13)
+        ) + 'px';
+      samplePreview.style.top =
+        Math.max(
+          0,
+          Math.min(rect.height - 29, previewPosition[1] - rect.top + 13)
+        ) + 'px';
+      samplePreview.querySelector('span').style.backgroundColor = hex;
+      samplePreview.querySelector('b').textContent = hex.toUpperCase();
+      samplePreview.hidden = false;
+    });
+  });
+  renderer.domElement.addEventListener('pointerleave', () => {
+    previewPosition = undefined;
+    samplePreview.hidden = true;
+  });
 
   renderer.domElement.addEventListener(
     'pointerdown',
@@ -163,41 +234,7 @@ export function createViewport(
       const callback = sampler;
       pickColor(undefined);
       if (event.button !== 0) return;
-      render(true);
-      const canvas = renderer.domElement;
-      const rect = canvas.getBoundingClientRect();
-      const x = Math.max(
-        0,
-        Math.min(
-          canvas.width - 1,
-          Math.floor(((event.clientX - rect.left) * canvas.width) / rect.width)
-        )
-      );
-      const topY = Math.max(
-        0,
-        Math.min(
-          canvas.height - 1,
-          Math.floor(((event.clientY - rect.top) * canvas.height) / rect.height)
-        )
-      );
-      const gl = renderer.getContext();
-      const pixel = new Uint8Array(4);
-      gl.readPixels(
-        x,
-        canvas.height - topY - 1,
-        1,
-        1,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        pixel
-      );
-      callback(
-        '#' +
-          [...pixel.slice(0, 3)]
-            .map((channel) => channel.toString(16).padStart(2, '0'))
-            .join('')
-      );
-      render();
+      callback(sampleAt(event.clientX, event.clientY));
     },
     { capture: true }
   );

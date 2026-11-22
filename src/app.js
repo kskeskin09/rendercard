@@ -3,6 +3,7 @@ import { createViewport } from './viewport.js';
 import { icon } from './icons.js';
 import {
   applyPose,
+  applyAcceleration,
   capture,
   decodeProject,
   disposeObject,
@@ -30,6 +31,7 @@ import { settingsMarkup, bindSettings } from './inspector-settings.js';
 import { createHistory } from './history.js';
 import { installPresets } from './presets.js';
 import { snapToGrid, snapToSurfaces } from './snapping.js';
+import { chooseTrack, hasKeys, keysFor, mainClip, posesOf } from './clips.js';
 
 const $ = (id) => document.getElementById(id);
 const all = (selector) => [...document.querySelectorAll(selector)];
@@ -51,6 +53,12 @@ let drag;
 let shiftPressed = false;
 let presetScene;
 let presets;
+let animations = {
+  clips: [{ ...mainClip }],
+  active: 'main',
+  enabled: ['main']
+};
+const openInspectorSections = new Set(['Dönüşüm']);
 
 function status(message) {
   $('status').textContent = message;
@@ -71,7 +79,7 @@ function captureScene() {
   const objects = [];
   forObjects((object) => objects.push(object));
   return {
-    project: JSON.stringify(encodeProject(root, duration)),
+    project: JSON.stringify(encodeProject(root, duration, animations)),
     frame,
     selection: [...selected].map((object) => objects.indexOf(object))
   };
@@ -82,6 +90,7 @@ function replaceScene(state) {
   [...root.children].forEach(disposeObject);
   project.objects.forEach((object) => root.add(object));
   duration = project.duration;
+  animations = project.animations;
   frame = state.frame;
   selected.clear();
   const objects = [];
@@ -135,9 +144,24 @@ function settleObject(object, from) {
 function poseScene(continuous = false) {
   const animated = [];
   forObjects((object) => {
-    if (object.userData.keys.length) {
+    if (!inActiveScene(object)) return;
+    const data = object.userData;
+    const keys = chooseTrack(object, animations.enabled, frame);
+    const physical =
+      data.positionMode === 'physics' &&
+      (keys || animations.enabled.includes(data.physicsClip));
+    if (
+      keys ||
+      (data.restPose && (hasKeys(object) || data.positionMode === 'physics'))
+    ) {
       const before = collisions ? capture(object) : undefined;
-      poseAt(object, frame);
+      if (keys) poseAt(object, frame, keys);
+      else if (data.restPose) applyPose(object, data.restPose);
+      if (physical) {
+        const source = keys?.[0] ?? data.restPose;
+        if (source) object.position.fromArray(source.position);
+        applyAcceleration(object, frame, keys?.[0].frame ?? 0);
+      }
       animated.push({ object, before });
     }
   });
@@ -187,11 +211,12 @@ function refreshFrame() {
   $('scrub').value = frame;
   $('playhead').style.left = (frame / duration) * 100 + '%';
   $('remove-key').disabled = ![...selected].some((object) =>
-    object.userData.keys.some((key) => key.frame === frame)
+    keysFor(object, animations.active).some((key) => key.frame === frame)
   );
 }
 
 function setPlaying(value) {
+  if (value && animations.enabled.length === 0) return;
   playing = value;
   $('play').innerHTML = icon(playing ? 'pause' : 'play');
   $('play').setAttribute('aria-label', playing ? 'Duraklat' : 'Oynat');
@@ -211,8 +236,18 @@ function updateTimeline() {
   $('scrub').max = duration;
   $('frame').max = duration;
   $('duration').value = duration;
-  $('track-name').textContent =
-    single()?.name || (selected.size ? selected.size + ' nesne' : 'Sahne');
+  paintClips();
+  const tracks = animations.clips.filter((clip) =>
+    animations.enabled.includes(clip.id)
+  );
+  const labels = tracks.map((clip) => {
+    const label = document.createElement('span');
+    label.textContent = clip.name;
+    label.title = clip.name;
+    return label;
+  });
+  $('track-name').replaceChildren(...labels);
+  $('track').style.minHeight = Math.max(48, 22 + 20 * tracks.length) + 'px';
   const tickCount = Math.min(duration, 8);
   $('ticks').replaceChildren(
     ...Array.from({ length: tickCount + 1 }, (_, index) => {
@@ -224,27 +259,125 @@ function updateTimeline() {
       return tick;
     })
   );
-  const frames = new Set();
-  if (selected.size) {
-    for (const object of selected)
-      for (const key of object.userData.keys) frames.add(key.frame);
-  } else {
-    forObjects((object) =>
-      object.userData.keys.forEach((key) => frames.add(key.frame))
-    );
-  }
   $('key-markers').replaceChildren(
-    ...[...frames]
-      .filter((value) => value <= duration)
-      .map((value) => {
-        const marker = document.createElement('span');
-        marker.className = 'key-dot';
-        marker.style.left = (value / duration) * 100 + '%';
-        return marker;
-      })
+    ...tracks.flatMap((clip, lane) => {
+      const frames = new Set();
+      forObjects((object) =>
+        keysFor(object, clip.id).forEach((key) => frames.add(key.frame))
+      );
+      return [...frames]
+        .filter((value) => value <= duration)
+        .map((value) => {
+          const marker = document.createElement('span');
+          marker.className = 'key-dot';
+          marker.style.top = 25 + lane * 20 + 'px';
+          marker.title = clip.name + ' · ' + value;
+          marker.style.left = (value / duration) * 100 + '%';
+          return marker;
+        });
+    })
   );
   refreshFrame();
 }
+
+function paintClips() {
+  const active = $('clip-active');
+  active.replaceChildren(
+    ...animations.clips.map((clip) => new Option(clip.name, clip.id))
+  );
+  active.value = animations.active;
+  $('clip-name').value = animations.clips.find(
+    (clip) => clip.id === animations.active
+  ).name;
+  $('clip-list').replaceChildren(
+    ...animations.clips.map((clip) => {
+      const label = document.createElement('label');
+      label.className = 'check-field';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = animations.enabled.includes(clip.id);
+      checkbox.onchange = () => {
+        const checked = new Set(animations.enabled);
+        if (checkbox.checked) checked.add(clip.id);
+        else checked.delete(clip.id);
+        useClips(
+          animations.clips
+            .filter((item) => checked.has(item.id))
+            .map((item) => item.id)
+        );
+      };
+      label.append(checkbox, clip.name);
+      return label;
+    })
+  );
+  $('clip-play-selected').disabled = animations.enabled.length === 0;
+  $('play').disabled = animations.enabled.length === 0;
+}
+
+function useClips(ids) {
+  animations.enabled = ids;
+  updateSceneVisibility();
+  stopAt(frame);
+  updateTimeline();
+  paintInspector();
+}
+
+function inActiveScene(object) {
+  for (let node = object; node; node = node.parent) {
+    if (node.clipActive === false) return false;
+  }
+  return true;
+}
+
+function updateSceneVisibility() {
+  forObjects((object) => {
+    const { sceneClip, hidden } = object.userData;
+    object.clipActive = !sceneClip || animations.enabled.includes(sceneClip);
+    object.visible = object.clipActive && !hidden;
+  });
+}
+
+$('clip-active').onchange = (event) => {
+  const wasSolo =
+    animations.enabled.length === 1 &&
+    animations.enabled[0] === animations.active;
+  animations.active = event.target.value;
+  if (wasSolo) useClips([animations.active]);
+  else {
+    updateTimeline();
+    paintInspector();
+  }
+};
+$('clip-name').onchange = (event) =>
+  edit(() => {
+    const clip = animations.clips.find((item) => item.id === animations.active);
+    clip.name = event.target.value.trim() || clip.name;
+    updateTimeline();
+    paintInspector();
+  });
+$('clip-add').onclick = () =>
+  edit(() => {
+    const clip = {
+      id: 'clip-' + crypto.randomUUID(),
+      name: 'Animasyon ' + (animations.clips.length + 1)
+    };
+    animations.clips.push(clip);
+    animations.active = clip.id;
+    useClips([clip.id]);
+  });
+$('clip-select-all').onclick = () =>
+  useClips(animations.clips.map((clip) => clip.id));
+function playClips() {
+  if (!animations.enabled.length) return;
+  $('clip-name').closest('details').open = false;
+  stopAt(0);
+  setPlaying(true);
+}
+$('clip-play-selected').onclick = playClips;
+$('clip-play-all').onclick = () => {
+  useClips(animations.clips.map((clip) => clip.id));
+  playClips();
+};
 
 function paintList() {
   const rows = [];
@@ -316,7 +449,37 @@ function paintInspector() {
       )
       .join('') +
     '</div>' +
-    settingsMarkup(object);
+    settingsMarkup(object) +
+    '<button id="inspector-delete" class="danger-button">Cismi sil</button>';
+  for (const block of panel.querySelectorAll('.inspector-block')) {
+    const heading = block.querySelector('h3');
+    if (!heading) continue;
+    const name = heading.textContent;
+    const header = heading.closest('.setting-heading') || heading;
+    const content = document.createElement('div');
+    const toggle = document.createElement('button');
+    toggle.className = 'inspector-toggle quiet';
+    for (const node of [...block.children])
+      if (node !== header) content.append(node);
+    block.append(toggle, content);
+    const update = () => {
+      const open = openInspectorSections.has(name);
+      content.hidden = !open;
+      toggle.textContent = open ? '−' : '+';
+      toggle.setAttribute(
+        'aria-label',
+        name + (open ? ' bölümünü daralt' : ' bölümünü genişlet')
+      );
+      toggle.setAttribute('aria-expanded', open);
+    };
+    toggle.onclick = () => {
+      if (openInspectorSections.has(name)) openInspectorSections.delete(name);
+      else openInspectorSections.add(name);
+      update();
+    };
+    update();
+  }
+  $('inspector-delete').onclick = () => edit(deleteSelection);
   const name = $('object-name');
   name.value = object.name;
   name.onchange = () =>
@@ -365,6 +528,20 @@ function paintInspector() {
   }
   bindSettings(panel, object, {
     edit,
+    scenes: animations.clips,
+    sceneChanged: updateSceneVisibility,
+    setMotion: (update) =>
+      edit(() => {
+        if (
+          !object.userData.restPose ||
+          (!hasKeys(object) && object.userData.positionMode !== 'physics')
+        ) {
+          object.userData.restPose = capture(object);
+        }
+        object.userData.physicsClip = animations.active;
+        update();
+        frameTo(frame);
+      }),
     status,
     pick: (callback) => {
       setPlaying(false);
@@ -414,8 +591,10 @@ function refreshTransform() {
 }
 
 function updateExistingKey(object) {
-  if (object.userData.keys.some((key) => key.frame === frame))
-    writeKey(object, frame);
+  if (keysFor(object, animations.active).some((key) => key.frame === frame))
+    writeKey(object, frame, animations.active);
+  else if (object.userData.positionMode === 'physics' && !hasKeys(object))
+    object.userData.restPose = capture(object);
 }
 
 function canGroup() {
@@ -436,6 +615,7 @@ function independentSelection() {
 }
 
 function refresh() {
+  updateSceneVisibility();
   view?.pickColor(undefined);
   paintList();
   paintInspector();
@@ -500,16 +680,23 @@ presets = installPresets({
     showPresetScene(false);
     if (!saved) status('Preset oluşturma iptal edildi.');
   },
-  current: () => encodeProject(root, duration),
+  current: () => encodeProject(root, duration, animations),
   fromObject: (object) => ({
     version: projectVersion,
     duration,
+    animations,
     objects: [encodeObject(object)]
   }),
   insert(record) {
     const project = decodeProject(record.project);
     if (!project.objects.length) return;
     edit(() => {
+      for (const clip of project.animations.clips) {
+        if (!animations.clips.some((existing) => existing.id === clip.id)) {
+          animations.clips.push(clip);
+          animations.enabled.push(clip.id);
+        }
+      }
       for (const object of project.objects) root.add(object);
       const object =
         project.objects.length === 1
@@ -522,12 +709,12 @@ presets = installPresets({
       groundObject(object);
       collisions?.separate(root, object);
       const offset = object.position.clone().sub(from).toArray();
-      for (const key of object.userData.keys) {
+      for (const key of posesOf(object)) {
         key.position = key.position.map((value, axis) => value + offset[axis]);
       }
       object.traverse((child) => {
-        const lastKey = child.userData.keys.at(-1);
-        if (lastKey) duration = Math.max(duration, lastKey.frame);
+        for (const key of posesOf(child))
+          if (key.frame != null) duration = Math.max(duration, key.frame);
       });
       setWireframe(wireframe);
       select(object);
@@ -545,6 +732,16 @@ function addObject(type) {
   forObjects((object) => names.add(object.name));
   while (names.has(types[type] + ' ' + index)) index++;
   const object = makeObject(type, types[type] + ' ' + index);
+  if (animations.active !== 'main') {
+    object.userData.sceneClip = animations.active;
+    if (!animations.enabled.includes(animations.active)) {
+      animations.enabled = animations.clips
+        .map((clip) => clip.id)
+        .filter(
+          (id) => id === animations.active || animations.enabled.includes(id)
+        );
+    }
+  }
   object.position.set(
     Math.min((index - 1) * 0.35, 2.1),
     type === 'light' ? 3 : 0.5,
@@ -552,6 +749,7 @@ function addObject(type) {
   );
   if (object.isMesh) object.material.wireframe = wireframe;
   root.add(object);
+  updateSceneVisibility();
   collisions?.separate(root, object);
   if (settleObject(object) === false) return false;
   select(object);
@@ -577,7 +775,7 @@ function deleteSelection() {
 function addKeys() {
   if (!selected.size) return;
   setPlaying(false);
-  for (const object of selected) writeKey(object, frame);
+  for (const object of selected) writeKey(object, frame, animations.active);
   updateTimeline();
   status(frame + '. kare kaydedildi.');
 }
@@ -634,7 +832,7 @@ $('group').onclick = () => {
 $('join').onclick = () => {
   const objects = [...selected];
   if (!canGroup() || !objects.every((object) => object.isMesh)) return;
-  if (objects.some((object) => object.userData.keys.length)) {
+  if (objects.some(hasKeys)) {
     status(
       'Ağları birleştirmek için seçili nesnelerin anahtar karelerini kaldır.'
     );
@@ -650,7 +848,7 @@ $('join').onclick = () => {
 $('ungroup').onclick = () => {
   const group = single();
   if (group?.userData.type !== 'group') return;
-  if (group.userData.keys.length) {
+  if (hasKeys(group)) {
     status('Önce grubun anahtar karelerini kaldır.');
     return;
   }
@@ -697,7 +895,7 @@ $('remove-key').onclick = () =>
     setPlaying(false);
     let removed = false;
     for (const object of selected) {
-      const keys = object.userData.keys;
+      const keys = keysFor(object, animations.active);
       const index = keys.findIndex((key) => key.frame === frame);
       if (index < 0) continue;
       keys.splice(index, 1);
@@ -792,7 +990,11 @@ async function saveOutput(blob, name, label) {
 }
 
 $('save').onclick = () => {
-  const content = JSON.stringify(encodeProject(root, duration), null, 2);
+  const content = JSON.stringify(
+    encodeProject(root, duration, animations),
+    null,
+    2
+  );
   void saveOutput(
     new Blob([content], { type: 'application/json' }),
     'sahne.rendercard.json',
@@ -810,6 +1012,8 @@ $('project-file').onchange = async (event) => {
       [...root.children].forEach(disposeObject);
       project.objects.forEach((object) => root.add(object));
       duration = project.duration;
+      animations = project.animations;
+      updateSceneVisibility();
       selected.clear();
       setWireframe(wireframe);
       frameTo(0);
@@ -931,6 +1135,11 @@ $('snap-step').onchange = () => {
     ? MathUtils.clamp(value, 0.001, 100)
     : 1;
 };
+for (const input of all('[name="snap-mode"]')) {
+  input.onchange = () => {
+    $('snap-precision').hidden = !$('snap-grid').checked;
+  };
+}
 
 populate();
 try {
@@ -976,7 +1185,7 @@ try {
         );
         const attached =
           $('snap-surface').checked &&
-          snapToSurfaces(root, object, drag.axes, step, collisions);
+          snapToSurfaces(root, object, drag.axes, 0.25, collisions);
         if (!attached && $('snap-grid').checked)
           snapToGrid(object, drag.axes, step);
         collisions?.sweep(root, object, drag.last);

@@ -36,12 +36,18 @@ Animasyon 30 FPS olarak WebM veya MP4 biçiminde yazılır. Tarayıcı sürümü
 - Ölçek tutamacı karşı kenarı sabit tutar. Sürüklerken **Shift** iki kenarı eşit miktarda değiştirir. Sayısal ölçek alanında aynı davranış için **Shift+Enter** kullanın.
 - **Yerleşim** bölümünde üç eksenin merkez noktasını ayrı seçin. Merkez seçimi modelin sahnedeki yerini korur, konum alanları seçilen yeni noktayı gösterir. Boyut değiştiğinde merkez noktası yeni sınıra uyarlanır. Birden fazla nesne seçiliyken **Hizala** komutları, son seçilen nesnenin merkez noktasını referans alır. Sahne görünümündeki **Merkez noktası** düğmesi sahnedeki noktaları gösterir.
 - **Zemine bitiştir**, en uç kenarı veya seçili merkez noktasını zemine taşır. **Katılık**, taşıma sırasında yüzeyde durdurur. Açarken bir çakışma varsa nesnelerin adlarını gösterir ve sahneyi yerinde bırakır.
-- **Yakalama** menüsünde **Tam konumlar** taşıma konumunu belirlenen aralığın katlarına yuvarlar. **Yüzeye yakala** temas noktasını arar ve yan yana sürüklemede uygun kenarları hizalar. Hassasiyet varsayılan olarak 1 sahne birimidir.
+- **Yakalama** menüsünde aynı anda bir mod kullanılır. **Tam konumlar** taşıma konumunu seçilen aralığın katlarına yuvarlar ve hassasiyeti varsayılan olarak 1 sahne birimidir. **Yüzeye yakala** yakın temas noktasını arar ve sürüklemede uygun kenarları hizalar.
 - Kutudaki **Köşe yarıçapı** biçimi yuvarlar, **Köşe ayrıntısı** eğrinin pürüzsüzlüğünü ayarlar. **Tile ölçeği** `1/N` olarak girilir. Örneğin `1/4`, deseni dört kat sık tekrarlar.
-- **Görünür/Gizli** sahnede ve renderda uygulanır. Gizli katı nesneler temas kontrolünde kalır. Renk alanı HEX, RGB ve HSL biçimlerinde düzenlenebilir. Sahneden renk alma, render rengini örnekler.
-- **Işık** ile ek bir noktasal ışık ekleyip konumunu, rengini ve gücünü ayarlayın.
+- **Görünür/Gizli** sahnede ve renderda uygulanır. Gizli katı nesneler temas kontrolünde kalır. Rengi paletten seçebilir veya HEX, RGB ve HSL biçimlerinde girebilirsiniz. Sahneden renk alma aracı, kullanacağı render rengini imlecin yanında gösterir.
+- **Işık** ile gölge oluşturabilen bir noktasal ışık ekleyip konumunu, rengini ve yüzde olarak gücünü ayarlayın. %0 seviyesinde çok düşük bir aydınlatma kalır.
 
-Her nesnenin animasyon ayarlarında yumuşak hızlanma ve yavaşlama gücü ayrı seçilir. Konum ivmesi, iki kare arasındaki varış anını koruyup hareketin önce yavaş sonra hızlı veya tersine ilerlemesini sağlar. Dönüşte **Kısa yol** veya **Uzun yol** yönelimi izler. **X, Y, Z açılarını izle** seçeneği her eksende girilen açı değişimini ve tam turu korur.
+## Animasyon sahneleri
+
+Zaman çizelgesindeki **Animasyonlar** menüsünden kanal ekleyin ve **Düzenlenen animasyon** alanını kullanarak kareleri hangi kanala kaydedeceğinizi seçin. Oynatılacak kanalların kutularını işaretleyin. **Seçileni oynat** yalnızca işaretlileri, **Toplu oynat** hepsini kare 0'dan eşzamanlı başlatır. Bir nesne **Her animasyonda** görünebilir veya tek bir sahneye ait olabilir. Birden çok işaretli kanal aynı anda aynı nesneye poz veriyorsa, çakışan aralıkta listede daha sonraki kanal önceliklidir.
+
+**Karelerle hareket** modunda hız grafiğinin başlangıç, orta ve bitiş yüzdeleri geçişin içindeki göreli hızı belirler. Her geçiş, hedef kareye zamanında varacak şekilde ölçeklenir. **Fiziksel ivme** modunda konum, dünya eksenlerindeki sabit ivmeyle durgun başlangıçtan hesaplanır. Bir sahne birimi bir metre kabul edilir. Örneğin Y ivmesi `-10 m/s²` olan bir nesne serbest hareket edebiliyorsa bir saniyede 5 metre aşağı gider. Hız grafiği bu modda yalnızca dönüş ve ölçeğe uygulanır.
+
+Dönüşte **Kısa yol** veya **Uzun yol** yönelimi izler. **X, Y, Z açılarını izle** seçeneği her eksende girilen açı değişimini ve tam turu korur.
 
 ## Presetler
 

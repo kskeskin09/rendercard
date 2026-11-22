@@ -14,6 +14,23 @@ export function travelTime(t, acceleration = 0) {
   return t + acceleration * t * (t - 1);
 }
 
+export function profileTime(t, points) {
+  const [start, middle, end] = points;
+  const area = (start + 2 * middle + end) / 4;
+  if (area === 0) return t;
+  const first = t <= 0.5;
+  const x = first ? t : t - 0.5;
+  const integral = first
+    ? start * x + (middle - start) * x * x
+    : (start + middle) / 4 + middle * x + (end - middle) * x * x;
+  return integral / area;
+}
+
+export function accelerationOffset(acceleration, frames, fps = 30) {
+  const elapsed = Math.max(0, frames) / fps;
+  return acceleration.map((value) => (value * elapsed ** 2) / 2);
+}
+
 export function interpolateRotation(object, from, to, t, path) {
   if (path === 'axes') {
     object.rotation.fromArray(

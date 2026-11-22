@@ -1,4 +1,5 @@
 import { Box3, Euler, Matrix4, Vector3 } from 'three';
+import { posesOf } from './clips.js';
 
 export function localBounds(object) {
   object.updateWorldMatrix(true, true);
@@ -37,7 +38,7 @@ export function fitPivot(object) {
   object.position.add(
     delta.clone().multiply(object.scale).applyQuaternion(object.quaternion)
   );
-  for (const key of object.userData.keys) {
+  for (const key of posesOf(object)) {
     const displacement = delta
       .clone()
       .multiply(new Vector3().fromArray(key.scale))
@@ -56,7 +57,7 @@ export function fitPivot(object) {
   } else {
     for (const child of object.children) {
       child.position.sub(delta);
-      for (const key of child.userData.keys) {
+      for (const key of posesOf(child)) {
         key.position = new Vector3()
           .fromArray(key.position)
           .sub(delta)

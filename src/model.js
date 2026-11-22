@@ -15,13 +15,15 @@ import {
 } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { applyTile, tiles } from './tiles.js';
-import { fitPivot } from './spatial.js';
+import { fitPivot, translateWorld } from './spatial.js';
+import { mainClip, keysFor, posesOf } from './clips.js';
 import {
   easedTime,
   travelTime,
   interpolateRotation,
   rotationPaths
 } from './motion.js';
+import { profileTime, accelerationOffset } from './motion.js';
 
 export const types = {
   box: 'Kutu',
@@ -31,7 +33,7 @@ export const types = {
   light: 'Işık'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 3;
+export const projectVersion = 4;
 const channels = ['position', 'rotation', 'scale'];
 
 const settingsDefaults = {
@@ -42,6 +44,11 @@ const settingsDefaults = {
   easeIn: 0,
   easeOut: 0,
   acceleration: 0,
+  physicsAcceleration: [0, 0, 0],
+  positionMode: 'keys',
+  physicsClip: 'main',
+  sceneClip: null,
+  speedProfile: null,
   rotationPath: 'short',
   finish: 'color',
   tile: 'checker',
@@ -116,8 +123,18 @@ export function makeObject(
               material(color, settings)
             )
           );
+  if (object.isLight) {
+    object.castShadow = true;
+    object.shadow.mapSize.set(512, 512);
+    object.shadow.camera.near = 0.1;
+    object.shadow.camera.far = 35;
+    object.shadow.camera.updateProjectionMatrix();
+    object.shadow.bias = -0.0003;
+    object.shadow.normalBias = 0.025;
+  }
   object.name = name;
   object.userData = { type, detail, keys: [], ...settings };
+  object.userData.tracks = {};
   object.visible = !settings.hidden;
   return object;
 }
@@ -143,7 +160,7 @@ function makeJoinedMesh(parts, name = 'Birleşik ağ', data) {
     )
   );
   mesh.name = name;
-  mesh.userData = { type: 'mesh', keys: [], parts, ...settings };
+  mesh.userData = { type: 'mesh', keys: [], tracks: {}, parts, ...settings };
   mesh.visible = !settings.hidden;
   return mesh;
 }
@@ -222,8 +239,9 @@ export function applyPose(object, pose) {
   for (const channel of channels) object[channel].fromArray(pose[channel]);
 }
 
-export function writeKey(object, frame) {
-  const keys = object.userData.keys;
+export function writeKey(object, frame, clip = 'main') {
+  const keys = keysFor(object, clip, true);
+  object.userData.restPose ??= capture(object);
   const previous = keys.findIndex((key) => key.frame === frame);
   const key = { frame, ...capture(object) };
   if (previous >= 0) keys.splice(previous, 1, key);
@@ -231,8 +249,7 @@ export function writeKey(object, frame) {
   keys.sort((a, b) => a.frame - b.frame);
 }
 
-export function poseAt(object, frame) {
-  const keys = object.userData.keys;
+export function poseAt(object, frame, keys = object.userData.keys) {
   if (keys.length === 0) return;
   const next = keys.findIndex((key) => key.frame >= frame);
   if (next <= 0 || keys[next].frame === frame) {
@@ -242,18 +259,35 @@ export function poseAt(object, frame) {
   const a = keys[next - 1];
   const b = keys[next];
   const clock = (frame - a.frame) / (b.frame - a.frame);
-  const { easeIn, easeOut, acceleration, rotationPath } = object.userData;
-  const t = easedTime(clock, easeIn, easeOut);
+  const { easeIn, easeOut, acceleration, rotationPath, speedProfile } =
+    object.userData;
+  const progress = (clock) =>
+    speedProfile
+      ? profileTime(clock, speedProfile)
+      : easedTime(clock, easeIn, easeOut);
+  const t = progress(clock);
   const interpolate = (channel, t) =>
     a[channel].map((value, axis) => MathUtils.lerp(value, b[channel][axis], t));
   object.position.fromArray(
     interpolate(
       'position',
-      easedTime(travelTime(clock, acceleration), easeIn, easeOut)
+      speedProfile ? t : progress(travelTime(clock, acceleration))
     )
   );
   object.scale.fromArray(interpolate('scale', t));
   interpolateRotation(object, a.rotation, b.rotation, t, rotationPath);
+}
+
+export function applyAcceleration(object, frame, startFrame = 0) {
+  const acceleration = object.userData.physicsAcceleration;
+  if (acceleration.some(Boolean) && frame > startFrame) {
+    translateWorld(
+      object,
+      new Vector3().fromArray(
+        accelerationOffset(acceleration, frame - startFrame)
+      )
+    );
+  }
 }
 
 export function encodeObject(object) {
@@ -271,10 +305,11 @@ export function encodeObject(object) {
   };
 }
 
-export function encodeProject(root, duration) {
+export function encodeProject(root, duration, animations) {
   return {
     version: projectVersion,
     duration,
+    animations,
     objects: root.children.map(encodeObject)
   };
 }
@@ -288,6 +323,16 @@ export function decodeProject(project) {
     value.scale.every((x) => x > 0);
   const validFrame = (value) =>
     Number.isInteger(value) && value >= 0 && value <= 1800;
+  const validKeys = (keys) =>
+    Array.isArray(keys) &&
+    keys.every(
+      (key, index) =>
+        validPose(key) &&
+        validFrame(key.frame) &&
+        (index === 0 || keys[index - 1].frame < key.frame)
+    );
+  const validClipId = (id) =>
+    typeof id === 'string' && /^(main|clip-[0-9a-f-]{1,36})$/.test(id);
   const validSettings = (data) =>
     (data.radius == null ||
       (Number.isFinite(data.radius) &&
@@ -298,6 +343,17 @@ export function decodeProject(project) {
         data.segments >= 1 &&
         data.segments <= 12)) &&
     (data.solid == null || typeof data.solid === 'boolean') &&
+    (data.physicsAcceleration == null ||
+      (numericTuple(data.physicsAcceleration) &&
+        data.physicsAcceleration.every((value) => Math.abs(value) <= 1000))) &&
+    (data.positionMode == null ||
+      ['keys', 'physics'].includes(data.positionMode)) &&
+    (data.physicsClip == null || validClipId(data.physicsClip)) &&
+    (data.sceneClip == null || validClipId(data.sceneClip)) &&
+    (data.speedProfile == null ||
+      (numericTuple(data.speedProfile) &&
+        data.speedProfile.every((value) => value >= 0 && value <= 200) &&
+        data.speedProfile.some(Boolean))) &&
     (data.hidden == null || typeof data.hidden === 'boolean') &&
     [data.easeIn, data.easeOut].every(
       (value) =>
@@ -337,14 +393,15 @@ export function decodeProject(project) {
       typeof data.name !== 'string' ||
       !validPose(data) ||
       !validSettings(data) ||
-      !Array.isArray(data.keys) ||
+      !validKeys(data.keys) ||
       !Array.isArray(data.children) ||
-      data.keys.some(
-        (key, index) =>
-          !validPose(key) ||
-          !validFrame(key.frame) ||
-          (index > 0 && data.keys[index - 1].frame >= key.frame)
-      ) ||
+      (data.tracks != null &&
+        (typeof data.tracks !== 'object' ||
+          Array.isArray(data.tracks) ||
+          !Object.entries(data.tracks).every(
+            ([id, keys]) => id !== 'main' && validClipId(id) && validKeys(keys)
+          ))) ||
+      (data.restPose != null && !validPose(data.restPose)) ||
       (data.type !== 'group' && data.children.length > 0) ||
       (data.type === 'light' &&
         (!/^#[0-9a-f]{6}$/i.test(data.color) ||
@@ -368,11 +425,14 @@ export function decodeProject(project) {
         : makeObject(data.type, data.name, data.color, data.detail, data);
     applyPose(object, data);
     object.userData.keys = structuredClone(data.keys);
+    object.userData.tracks = structuredClone(data.tracks ?? {});
+    const rest = data.restPose ?? object.userData.keys[0];
+    if (rest) object.userData.restPose = structuredClone(rest);
     for (const child of data.children) object.add(decode(child));
     return object;
   }
   if (
-    ![1, 2, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, projectVersion].includes(project?.version) ||
     !validFrame(project.duration) ||
     project.duration < 1 ||
     !Array.isArray(project.objects)
@@ -380,7 +440,36 @@ export function decodeProject(project) {
     throw new Error('Geçersiz proje');
   }
   project.objects.forEach((object) => validate(object, 0));
-  return { duration: project.duration, objects: project.objects.map(decode) };
+  const animations = project.animations ?? {
+    clips: [mainClip],
+    active: 'main',
+    enabled: ['main']
+  };
+  if (
+    !Array.isArray(animations.clips) ||
+    !animations.clips.every(
+      (clip) =>
+        validClipId(clip?.id) &&
+        typeof clip.name === 'string' &&
+        clip.name.trim()
+    )
+  ) {
+    throw new Error('Geçersiz animasyon listesi');
+  }
+  const ids = new Set(animations.clips.map((clip) => clip.id));
+  if (
+    !ids.size ||
+    ids.size !== animations.clips.length ||
+    !ids.has(animations.active) ||
+    !Array.isArray(animations.enabled) ||
+    !animations.enabled.every((id) => ids.has(id))
+  )
+    throw new Error('Geçersiz animasyon listesi');
+  return {
+    duration: project.duration,
+    animations: structuredClone(animations),
+    objects: project.objects.map(decode)
+  };
 }
 
 function centerOf(objects) {
@@ -397,7 +486,7 @@ export function groupObjects(objects) {
   parent.add(group);
   for (const object of objects) {
     object.position.sub(center);
-    for (const key of object.userData.keys)
+    for (const key of posesOf(object))
       key.position = key.position.map(
         (value, index) => value - center.getComponent(index)
       );
@@ -413,7 +502,7 @@ export function dissolveGroup(group) {
   group.updateMatrix();
   const proxy = new Group();
   for (const child of children) {
-    for (const key of child.userData.keys) {
+    for (const key of posesOf(child)) {
       applyPose(proxy, key);
       proxy.applyMatrix4(group.matrix);
       Object.assign(key, capture(proxy));

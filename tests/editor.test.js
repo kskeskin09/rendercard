@@ -9,6 +9,7 @@ import {
 } from '../src/collisions.js';
 import {
   decodeProject,
+  applyAcceleration,
   encodeProject,
   groupObjects,
   joinMeshes,
@@ -26,6 +27,8 @@ import {
 import { createHistory } from '../src/history.js';
 import { snapToGrid, surfaceOffset } from '../src/snapping.js';
 import { readColor } from '../src/color-editor.js';
+import { profileTime } from '../src/motion.js';
+import { chooseTrack, keysFor } from '../src/clips.js';
 
 const close = (actual, expected) =>
   assert(Math.abs(actual - expected) < 0.0001, `${actual} != ${expected}`);
@@ -198,6 +201,7 @@ test('visibility, lights, color formats and timing are preserved in the project'
   ).objects;
   assert.equal(loadedLight.visible, false);
   assert.equal(loadedLight.intensity, 90);
+  assert.equal(loadedLight.castShadow, true);
   assert.equal(loadedLight.color.getHexString(), 'caff80');
   poseAt(loadedMesh, 30);
   close(loadedMesh.position.x, 2.5);
@@ -211,4 +215,50 @@ test('visibility, lights, color formats and timing are preserved in the project'
   );
   assert.equal(readColor('255, 0, 0', 'RGB').getHexString(), 'ff0000');
   assert.equal(readColor('120, 100%, 50%', 'HSL').getHexString(), '00ff00');
+});
+
+test('profile speed is normalized and physical acceleration uses world axes and seconds', () => {
+  close(profileTime(0.5, [0, 100, 100]), 1 / 3);
+  close(profileTime(1, [25, 180, 35]), 1);
+  const group = new Group();
+  const box = makeObject('box', 'Düşen', '#ffffff', 24, {
+    physicsAcceleration: [0, -10, 0]
+  });
+  group.rotation.z = Math.PI / 2;
+  group.position.y = 10;
+  group.add(box);
+  applyAcceleration(box, 30);
+  close(box.getWorldPosition(new Vector3()).y, 5);
+  close(box.getWorldPosition(new Vector3()).x, 0);
+});
+
+test('independent clip keys and playback selection survive a project round trip', () => {
+  const box = makeObject('box');
+  const id = 'clip-a';
+  writeKey(box, 0);
+  box.position.x = 10;
+  writeKey(box, 60);
+  box.position.x = 7;
+  writeKey(box, 0, id);
+  box.position.x = 9;
+  writeKey(box, 60, id);
+  const animations = {
+    clips: [
+      { id: 'main', name: 'A' },
+      { id, name: 'B' }
+    ],
+    active: id,
+    enabled: ['main', id]
+  };
+  const loaded = decodeProject(
+    JSON.parse(
+      JSON.stringify(encodeProject(new Group().add(box), 60, animations))
+    )
+  );
+  assert.deepEqual(loaded.animations, animations);
+  const [copy] = loaded.objects;
+  assert.equal(keysFor(copy, 'main')[0].position[0], 0);
+  assert.equal(keysFor(copy, id)[0].position[0], 7);
+  poseAt(copy, 30, chooseTrack(copy, ['main', id], 30));
+  close(copy.position.x, 8);
 });
