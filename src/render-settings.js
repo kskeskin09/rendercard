@@ -7,6 +7,15 @@ export const validRenderSize = size =>
   size && ['width', 'height'].every(axis =>
     Number.isInteger(size[axis]) && size[axis] >= 16 && size[axis] <= maxRenderSide);
 
+export function renderAspectLabel(width, height) {
+  let numerator = width;
+  let denominator = height;
+  while (denominator) {
+    [numerator, denominator] = [denominator, numerator % denominator];
+  }
+  return width / numerator + ':' + height / numerator;
+}
+
 export function fitRenderFrame(width, height, aspect) {
   const fitWidth = Math.min(width, height * aspect);
   return { width: fitWidth, height: fitWidth / aspect };

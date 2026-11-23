@@ -36,7 +36,7 @@ import { angularTrajectory, trajectory } from './dynamics.js';
 import { chooseTrack, hasKeys, keysFor, mainClip, posesOf } from './clips.js';
 import { cameraAt, writeCameraKey } from './camera-track.js';
 import { applySelectionTransform, selectionTransforms } from './multi-transform.js';
-import { defaultRenderSize, renderSizes, validRenderSize } from './render-settings.js';
+import { defaultRenderSize, renderAspectLabel, renderSizes, validRenderSize } from './render-settings.js';
 import { bindColor, fogColorMarkup } from './color-editor.js';
 import {
   axes,
@@ -2080,11 +2080,13 @@ function updateRenderGuide() {
 }
 const renderDialog = $('render-settings-dialog');
 const renderPreset = $('render-preset');
+const customPreset = new Option('Özel', 'custom');
 renderPreset.replaceChildren(...renderSizes.map(([width, height]) =>
-  new Option(width + ' × ' + height, width + 'x' + height)), new Option('Özel', 'custom'));
+  new Option(width + ' × ' + height + ' (' + renderAspectLabel(width, height) + ')', width + 'x' + height)), customPreset);
 function chooseRenderPreset() {
   const width = $('render-width').valueAsNumber;
   const height = $('render-height').valueAsNumber;
+  customPreset.text = validRenderSize({ width, height }) ? 'Özel (' + renderAspectLabel(width, height) + ')' : 'Özel';
   renderPreset.value = renderSizes.some(([w, h]) => width === w && height === h) ? width + 'x' + height : 'custom';
 }
 $('render-settings').onclick = () => {
@@ -2112,7 +2114,7 @@ $('render-settings-form').onsubmit = event => {
     edit(() => { renderSize = size; }, 'Render çözünürlüğünü değiştir');
   updateRenderGuide();
   renderDialog.close();
-  status('Render boyutu ' + size.width + ' × ' + size.height + ' piksel.');
+  status('Render boyutu ' + size.width + ' × ' + size.height + ' piksel (' + renderAspectLabel(size.width, size.height) + ').');
 };
 const preview = $('render-preview');
 const previewCanvas = $('render-preview-image');

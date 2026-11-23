@@ -747,9 +747,12 @@ test('history revisions recognize returning to the saved state and diverging aga
 });
 
 test('render presets fit the editing area and custom resolution survives serialization', async () => {
-  const { fitRenderFrame, validRenderSize, defaultRenderSize } = await import('../src/render-settings.js');
+  const { fitRenderFrame, renderAspectLabel, validRenderSize, defaultRenderSize } = await import('../src/render-settings.js');
   const resolution = { width: 1080, height: 1920 };
   assert(validRenderSize(resolution));
+  assert.equal(renderAspectLabel(1920, 1080), '16:9');
+  assert.equal(renderAspectLabel(1080, 1920), '9:16');
+  assert.equal(renderAspectLabel(320, 480), '2:3');
   assert.equal(validRenderSize({ width: 9000, height: 720 }), false);
   assert.deepEqual(fitRenderFrame(960, 540, 9 / 16), { width: 303.75, height: 540 });
   const root = new Group();
