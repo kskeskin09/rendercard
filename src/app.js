@@ -37,7 +37,10 @@ import { chooseTrack, hasKeys, keysFor, mainClip, posesOf } from './clips.js';
 import { cameraAt, writeCameraKey } from './camera-track.js';
 import { applySelectionTransform, selectionTransforms } from './multi-transform.js';
 import { defaultRenderSize, renderAspectLabel, renderSizes, validRenderSize } from './render-settings.js';
-import { bindColor, fogColorMarkup } from './color-editor.js';
+import { atmosphereColorMarkup, bindColor } from './color-editor.js';
+import { skyTiles } from './sky-texture.js';
+import { orbitPosition, orderedOrbits } from './orbit-motion.js';
+import { timelineWindow } from './timeline-window.js';
 import {
   axes,
   axisHeading,
@@ -58,6 +61,10 @@ let recording = false;
 let wireframe = false;
 let mode = 'select';
 let startedAt = 0;
+let editPlaybackRate = 1;
+let timelineZoom = 0;
+let timelineStart = 0;
+let timelineRows = [];
 let view;
 let collisions;
 let history = createHistory();
@@ -266,6 +273,7 @@ function describeEdit(before, after) {
 
 function commitEdit(before, description) {
   updateSceneVisibility();
+  updateOrbits();
   updateFollowers();
   if (selected.size > 1 && !drag) setMode(mode);
   const after = captureScene();
@@ -397,6 +405,8 @@ function rotationPhysics(object, source, keys, startFrame, linear) {
 
 function poseScene(continuous = false) {
   const animated = [];
+  const orbits = orbitActors();
+  const previousPositions = new Map([...orbits.keys()].map(object => [object, object.position.clone()]));
   forObjects((object) => {
     if (!inActiveScene(object)) return;
     const data = object.userData;
@@ -409,7 +419,7 @@ function poseScene(continuous = false) {
       (keys || animations.enabled.includes(data.angularClip));
     if (
       keys ||
-      (data.restPose && (hasKeys(object) || data.positionMode === 'physics' || data.rotationMode === 'physics'))
+      (data.restPose && (hasKeys(object) || data.positionMode !== 'keys' || data.rotationMode === 'physics'))
     ) {
       const before = collisions ? capture(object) : undefined;
       if (keys) poseAt(object, frame, keys);
@@ -419,7 +429,7 @@ function poseScene(continuous = false) {
         positionPhysics(object, source, keys?.[0].frame ?? 0);
       }
       if (angular) rotationPhysics(object, keys?.[0] ?? data.restPose, keys, keys?.[0].frame ?? 0, Boolean(physical));
-      if (!physical) animated.push({ object, before });
+      if (!physical && !orbits.has(object)) animated.push({ object, before });
     }
   });
   if (collisions && animated.length) {
@@ -433,6 +443,40 @@ function poseScene(continuous = false) {
       if (collisions.overlaps(root, object).length) applyPose(object, before);
     }
   }
+  updateOrbits(orbits, continuous, previousPositions);
+}
+
+function orbitActors(onlyActive = true) {
+  const actors = new Map();
+  forObjects(object => {
+    const { orbit, positionMode, followTarget } = object.userData;
+    if (positionMode !== 'orbit' || !orbit.target || (object.isCamera && followTarget)) return;
+    if (onlyActive && (!inActiveScene(object) || !animations.enabled.includes(orbit.clip))) return;
+    const target = getObjectById(orbit.target);
+    if (target && (!onlyActive || inActiveScene(target))) actors.set(object, target);
+  });
+  return actors;
+}
+
+function updateOrbits(actors = orbitActors(), continuous = false, previous) {
+  for (const [object, target] of orderedOrbits(actors)) {
+    const from = previous?.get(object) ?? object.position.clone();
+    const center = target.getWorldPosition(new Vector3());
+    const point = orbitPosition(center, frame, fps, object.userData.orbit);
+    object.position.copy(object.parent.worldToLocal(point));
+    if (continuous) collisions?.sweep(root, object, from);
+    if (collisions?.overlaps(root, object).length) object.position.copy(from);
+  }
+}
+
+function orbitCenters(object) {
+  const options = [];
+  forObjects(target => {
+    if (target.isCamera) return;
+    for (let node = target; node; node = node.parent) if (node === object) return;
+    options.push(target);
+  });
+  return options;
 }
 
 function select(object, extend = false) {
@@ -461,6 +505,11 @@ function frameTo(next, continuous = false) {
   frame = Math.min(duration, Math.max(0, Math.round(next)));
   cameraOverride = undefined;
   poseScene(continuous);
+  const range = timelineWindow(duration, timelineZoom, timelineStart);
+  if (frame < range.start || frame > range.end) {
+    timelineStart = frame - Math.round(range.span * (frame < range.start ? .86 : .14));
+    paintTimelineWindow();
+  }
   refreshFrame();
   refreshTransform();
   if (selected.size > 1 && !drag) setMode(mode);
@@ -469,8 +518,7 @@ function frameTo(next, continuous = false) {
 function refreshFrame() {
   if (document.activeElement !== $('frame') || !playing)
     $('frame').value = frame;
-  $('scrub').value = frame;
-  $('playhead').style.left = (frame / duration) * 100 + '%';
+  paintPlayhead();
   $('remove-key').disabled = ![...selected].some((object) =>
     keysFor(object, animations.active).some((key) => key.frame === frame)
   );
@@ -479,6 +527,10 @@ function refreshFrame() {
     animations.active
   ]?.some((key) => key.frame === frame);
   updateCameraView();
+}
+
+function playingRate() {
+  return previewStart === undefined ? editPlaybackRate : 1;
 }
 
 function setPlaying(value) {
@@ -497,7 +549,7 @@ function setPlaying(value) {
   $('preview-play').setAttribute('aria-label', playing ? 'Duraklat' : 'Oynat');
   if (playing) {
     if (frame >= duration) frameTo(0);
-    startedAt = performance.now() - (frame * 1000) / fps;
+    startedAt = performance.now() - (frame * 1000) / (fps * playingRate());
   }
   updateCameraView();
 }
@@ -510,26 +562,25 @@ function stopAt(next) {
 function updateTimeline() {
   paintAtmosphere();
   paintCameraChoices();
-  $('scrub').max = duration;
   $('frame').max = duration;
   $('duration').value = duration;
   paintClips();
   const clips = animations.clips.filter((clip) =>
     animations.enabled.includes(clip.id)
   );
-  const tracks = [];
+  timelineRows = [];
   const objects = [];
   forObjects(object => objects.push(object));
   for (const clip of clips) {
     const cameras = animations.cameraTracks?.[clip.id] ?? [];
-    if (cameras.length || clip.id === animations.active) tracks.push({ clip, keys: cameras, camera: true });
+    if (cameras.length || clip.id === animations.active) timelineRows.push({ clip, keys: cameras, camera: true });
     for (const object of objects) {
       const keys = keysFor(object, clip.id);
       if (keys.length || (clip.id === animations.active && selected.has(object)))
-        tracks.push({ clip, keys, object });
+        timelineRows.push({ clip, keys, object });
     }
   }
-  const labels = tracks.map(({ clip, object, camera }) => {
+  const labels = timelineRows.map(({ clip, object, camera }) => {
     const label = document.createElement(object ? 'button' : 'span');
     const name = camera ? 'Kamera geçişleri' : object.name;
     label.textContent = clips.length > 1 ? clip.name + ' · ' + name : name;
@@ -541,35 +592,91 @@ function updateTimeline() {
     return label;
   });
   $('track-name').replaceChildren(...labels);
-  $('track').style.minHeight = Math.max(48, 19 + 20 * tracks.length) + 'px';
+  $('track').style.minHeight = Math.max(48, 19 + 20 * timelineRows.length) + 'px';
   $('paste-key').hidden = !copiedKey;
   $('paste-key').disabled = !single();
-  const tickCount = Math.min(duration, 8);
+  paintTimelineWindow();
+  refreshFrame();
+}
+
+function timelinePercent(value, { start, span } = timelineWindow(duration, timelineZoom, timelineStart)) {
+  return ((value - start) / span) * 100;
+}
+
+function paintPlayhead(range = timelineWindow(duration, timelineZoom, timelineStart)) {
+  const visible = frame >= range.start && frame <= range.end;
+  $('playhead').hidden = !visible;
+  if (visible) {
+    $('scrub').value = frame;
+    $('playhead').style.left = timelinePercent(frame, range) + '%';
+  }
+}
+
+function paintTimelineWindow() {
+  const range = timelineWindow(duration, timelineZoom, timelineStart);
+  const { start, end, span } = range;
+  timelineStart = start;
+  $('scrub').min = start;
+  $('scrub').max = end;
+  $('timeline-scroll').max = duration - span;
+  $('timeline-scroll').value = start;
+  $('timeline-scroll').hidden = span === duration;
+  $('timeline-zoom').disabled = Math.min(240, duration) <= 6;
+  $('timeline-range').textContent = start + '–' + end;
+  const tickCount = Math.min(span, 8);
   $('ticks').replaceChildren(
     ...Array.from({ length: tickCount + 1 }, (_, index) => {
       const tick = document.createElement('span');
-      const value = Math.round((index / tickCount) * duration);
+      const value = start + Math.round((index / tickCount) * span);
       tick.className = 'tick';
-      tick.style.left = (value / duration) * 100 + '%';
+      tick.style.left = timelinePercent(value, range) + '%';
       tick.textContent = value;
       return tick;
     })
   );
   $('key-markers').replaceChildren(
-    ...tracks.flatMap(({ clip, keys, object, camera }, lane) => keys
-        .filter((key) => key.frame <= duration)
+    ...timelineRows.flatMap(({ clip, keys, object, camera }, lane) => keys
+        .filter(key => key.frame >= start && key.frame <= end)
         .map((key) => {
           const marker = document.createElement('button');
           marker.className = 'key-dot' + (camera ? ' camera-dot' : '');
           marker.style.top = 23 + lane * 20 + 'px';
-          marker.style.left = (key.frame / duration) * 100 + '%';
+          marker.style.left = timelinePercent(key.frame, range) + '%';
           marker.title = (camera ? (getCamera(key.camera)?.name ?? 'Varsayılan') : object.name) + ' · ' + key.frame;
           bindTimelineMarker(marker, { clip: clip.id, frame: key.frame, lane, camera, object });
           return marker;
         }))
   );
-  refreshFrame();
+  paintPlayhead(range);
 }
+
+$('timeline-speed').onchange = event => {
+  editPlaybackRate = Number(event.currentTarget.value);
+  if (playing && previewStart === undefined)
+    startedAt = performance.now() - frame * 1000 / (fps * editPlaybackRate);
+};
+$('timeline-zoom').oninput = event => {
+  const old = timelineWindow(duration, timelineZoom, timelineStart);
+  timelineZoom = event.currentTarget.valueAsNumber;
+  const { span } = timelineWindow(duration, timelineZoom, timelineStart);
+  const anchor = frame >= old.start && frame <= old.end ? frame : (old.start + old.end) / 2;
+  timelineStart = anchor - (anchor - old.start) / old.span * span;
+  paintTimelineWindow();
+};
+$('timeline-scroll').oninput = event => {
+  timelineStart = event.currentTarget.valueAsNumber;
+  paintTimelineWindow();
+};
+$('track').addEventListener('wheel', event => {
+  const { span } = timelineWindow(duration, timelineZoom, timelineStart);
+  if (span === duration || event.shiftKey) return;
+  const delta = event.deltaX || event.deltaY;
+  if (!delta) return;
+  event.preventDefault();
+  const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 120 : 1;
+  timelineStart += Math.sign(delta) * Math.max(1, Math.round(Math.abs(delta) * scale * span / 700));
+  paintTimelineWindow();
+}, { passive: false });
 
 function timelineKeys(target) {
   return target.camera ? animations.cameraTracks?.[target.clip] ?? [] : keysFor(target.object, target.clip);
@@ -613,7 +720,8 @@ function cancelKeyMove() {
 function pointerFrame(clientX) {
   const bounds = $('track').getBoundingClientRect();
   const fraction = MathUtils.clamp((clientX - bounds.left) / bounds.width, 0, 1);
-  return Math.round(fraction * duration);
+  const { start, span } = timelineWindow(duration, timelineZoom, timelineStart);
+  return start + Math.round(fraction * span);
 }
 
 $('timeline-move').onclick = () => {
@@ -624,7 +732,7 @@ $('timeline-move').onclick = () => {
   const marker = document.createElement('span');
   marker.className = 'key-dot moving-dot' + (camera ? ' camera-dot' : '');
   marker.style.top = 23 + lane * 20 + 'px';
-  marker.style.left = (frame / duration) * 100 + '%';
+  marker.style.left = timelinePercent(frame) + '%';
   $('track').append(marker);
   $('track').classList.add('moving-key');
   movingKey = { target: timelineTarget, marker };
@@ -675,7 +783,7 @@ $('timeline-camera-change').onchange = event => {
   }, 'Geçilecek kamerayı değiştir');
 };
 document.addEventListener('pointermove', event => {
-  if (movingKey) movingKey.marker.style.left = (pointerFrame(event.clientX) / duration) * 100 + '%';
+  if (movingKey) movingKey.marker.style.left = timelinePercent(pointerFrame(event.clientX)) + '%';
 });
 document.addEventListener('pointerdown', event => {
   if (!event.target.closest('#timeline-menu')) $('timeline-menu').hidden = true;
@@ -866,6 +974,7 @@ function removeClip(id) {
     else delete data.tracks[id];
     if (data.sceneClip === id) data.sceneClip = null;
     if (data.physicsClip === id) data.physicsClip = replacement.id;
+    if (data.orbit.clip === id) data.orbit.clip = replacement.id;
     if (data.angularClip === id) data.angularClip = replacement.id;
   });
   animations.clips = animations.clips.filter((clip) => clip.id !== id);
@@ -972,7 +1081,8 @@ function nextClip() {
       (object.userData.positionMode === 'physics' &&
       (keys.length > 0 || object.userData.physicsClip === next)) ||
       (object.userData.rotationMode === 'physics' &&
-      (keys.length > 0 || object.userData.angularClip === next));
+      (keys.length > 0 || object.userData.angularClip === next)) ||
+      (object.userData.positionMode === 'orbit' && object.userData.orbit.clip === next && object.userData.orbit.target);
   });
   sequence.end = physics || end === 0 ? duration : Math.min(duration, end);
   stopAt(0);
@@ -985,7 +1095,7 @@ function nextClip() {
 
 const dismissMenus = (target) => {
   for (const menu of all(
-    '.clip-menu-wrap, .fog-menu-wrap, .camera-menu-wrap, .color-editor'
+    '.clip-menu-wrap, .fog-menu-wrap, .sky-menu-wrap, .camera-menu-wrap, .color-editor'
   )) {
     if (!target || !menu.contains(target)) menu.open = false;
   }
@@ -1034,7 +1144,7 @@ function setMeasure(active) {
 $('measure').onclick = () => setMeasure(!measuring);
 
 const fogPalette = $('fog-palette');
-fogPalette.innerHTML = fogColorMarkup();
+fogPalette.innerHTML = atmosphereColorMarkup('fog-', 'Sis rengi');
 const fogColor = new Color(atmosphere.color);
 const refreshFogColor = bindColor(fogPalette, fogColor, {
   prefix: 'fog-',
@@ -1047,12 +1157,39 @@ const refreshFogColor = bindColor(fogPalette, fogColor, {
   }
 });
 
+const skyPalette = $('sky-palette');
+skyPalette.innerHTML = atmosphereColorMarkup('sky-', 'Gökyüzü rengi');
+const skyColor = new Color(atmosphere.skyColor);
+const refreshSkyColor = bindColor(skyPalette, skyColor, {
+  prefix: 'sky-',
+  edit: callback => edit(callback, 'Gökyüzü rengini değiştir'),
+  pick: pickSceneColor,
+  status,
+  changed: () => {
+    atmosphere.skyColor = '#' + skyColor.getHexString();
+    view?.setAtmosphere(atmosphere);
+  }
+});
+$('sky-texture').replaceChildren(...Object.entries(skyTiles).map(([value, name]) => new Option(name, value)));
+for (const [id, field] of [['sky-mode', 'skyMode'], ['sky-texture', 'skyTile']]) {
+  $(id).onchange = event => edit(() => {
+    atmosphere[field] = event.currentTarget.value;
+    paintAtmosphere();
+  }, 'Gökyüzünü değiştir');
+}
+
 function paintAtmosphere() {
   $('fog-enabled').checked = atmosphere.enabled;
   fogColor.set(atmosphere.color);
   refreshFogColor();
   $('fog-near').value = atmosphere.near;
   $('fog-far').value = atmosphere.far;
+  $('sky-mode').value = atmosphere.skyMode;
+  $('sky-texture').value = atmosphere.skyTile;
+  skyPalette.hidden = atmosphere.skyMode !== 'color';
+  $('sky-texture-field').hidden = atmosphere.skyMode !== 'tile';
+  skyColor.set(atmosphere.skyColor);
+  refreshSkyColor();
   $('default-light').setAttribute(
     'aria-pressed',
     String(atmosphere.defaultLight)
@@ -1328,21 +1465,45 @@ function paintInspector() {
       edit(() => {
         if (
           !object.userData.restPose ||
-          (!hasKeys(object) && object.userData.positionMode !== 'physics' && object.userData.rotationMode !== 'physics')
+          (!hasKeys(object) && object.userData.positionMode === 'keys' && object.userData.rotationMode === 'keys')
         ) {
           object.userData.restPose = capture(object);
         }
-        object.userData[kind === 'angular' ? 'angularClip' : 'physicsClip'] = animations.active;
         update();
+        const data = object.userData;
+        if (kind === 'orbit') {
+          data.orbit.clip = animations.active;
+          if (data.positionMode === 'orbit' && data.orbit.target) {
+            const actors = orbitActors(false);
+            if (actors.has(object) && !orderedOrbits(actors).some(([actor]) => actor === object)) {
+              const message = 'Bu merkez döngüsel bir yörünge oluşturuyor. Başka bir nesne seç.';
+              status(message);
+              toast(message, 'warning');
+              return false;
+            }
+          }
+          if (data.positionMode === 'orbit' && object.isCamera && data.followTarget) {
+            data.followTarget = data.followOffset = null;
+            status('Kamera konumu yörüngeye bağlandı. Kamera takibi kapatıldı.');
+            paintInspector();
+          }
+        } else data[kind === 'angular' ? 'angularClip' : 'physicsClip'] = animations.active;
         frameTo(frame);
       }),
     status,
     highlight: (axis) => view?.highlightEdges(axis ? object : undefined, axis),
     pick: pickSceneColor,
     followOptions: object.isCamera ? followTargets(object) : [],
+    orbitOptions: orbitCenters(object),
     collisionChanged: paintList,
     setFollow: (id) => edit(() => {
       const target = followTargets(object).find(item => item.userData.objectId === id);
+      if (target && object.userData.positionMode === 'orbit') {
+        const message = 'Kamera konumu yörüngeye bağlı. Takip için Konum hareketi ayarını değiştir.';
+        status(message);
+        toast(message, 'warning');
+        return;
+      }
       object.userData.followTarget = target?.userData.objectId ?? null;
       object.userData.followOffset = null;
       if (target) captureFollowOffset(object, target);
@@ -1396,7 +1557,7 @@ function refreshTransform() {
 function updateExistingKey(object) {
   if (keysFor(object, animations.active).some((key) => key.frame === frame))
     writeKey(object, frame, animations.active);
-  else if ((object.userData.positionMode === 'physics' || object.userData.rotationMode === 'physics') && !hasKeys(object))
+  else if ((object.userData.positionMode !== 'keys' || object.userData.rotationMode === 'physics') && !hasKeys(object))
     object.userData.restPose = capture(object);
 }
 
@@ -1536,6 +1697,7 @@ presets = installPresets({
             child.userData.followTarget = idMap.get(child.userData.followTarget) ?? null;
             if (!child.userData.followTarget) child.userData.followOffset = null;
           }
+          child.userData.orbit.target = idMap.get(child.userData.orbit.target) ?? null;
         });
         root.add(object);
       }
@@ -1620,6 +1782,7 @@ function deleteSelection() {
       object.userData.followTarget = null;
       object.userData.followOffset = null;
     }
+    if (removedObjects.has(object.userData.orbit.target)) object.userData.orbit.target = null;
   });
   for (const parent of parents) {
     if (parent === root) continue;
@@ -1663,6 +1826,8 @@ function duplicateObjects(objects = independentSelection()) {
       copy.traverse(child => {
         const target = ids.get(child.userData.followTarget);
         if (target) child.userData.followTarget = target;
+        const center = ids.get(child.userData.orbit.target);
+        if (center) child.userData.orbit.target = center;
       });
       objects[index].parent.add(copy);
       const from = copy.position.clone();
@@ -1768,9 +1933,11 @@ function mergeSelection(objects) {
     if (!merged) {
       const erased = new Set(objects.map(object => object.userData.objectId));
       forObjects(object => {
-        if (!erased.has(object.userData.followTarget)) return;
-        object.userData.followTarget = null;
-        object.userData.followOffset = null;
+        if (erased.has(object.userData.followTarget)) {
+          object.userData.followTarget = null;
+          object.userData.followOffset = null;
+        }
+        if (erased.has(object.userData.orbit.target)) object.userData.orbit.target = null;
       });
       select();
       status('Negatif hacim seçili cisimleri tamamen çıkardı.');
@@ -1778,9 +1945,11 @@ function mergeSelection(objects) {
     }
     const mergedIds = new Set(objects.map(object => object.userData.objectId));
     forObjects(object => {
-      if (!mergedIds.has(object.userData.followTarget)) return;
-      object.userData.followTarget = merged.userData.objectId;
-      captureFollowOffset(object, merged);
+      if (mergedIds.has(object.userData.followTarget)) {
+        object.userData.followTarget = merged.userData.objectId;
+        captureFollowOffset(object, merged);
+      }
+      if (mergedIds.has(object.userData.orbit.target)) object.userData.orbit.target = merged.userData.objectId;
     });
     select(merged);
     setWireframe(wireframe);
@@ -1800,7 +1969,7 @@ $('join').onclick = () => {
   const objects = [...selected];
   const keyed = objects.filter(hasKeys);
   const physical = objects.filter(object =>
-    object.userData.positionMode === 'physics' || object.userData.rotationMode === 'physics');
+    object.userData.positionMode !== 'keys' || object.userData.rotationMode === 'physics');
   if (!keyed.length && !physical.length) {
     mergeSelection(objects);
     return;
@@ -1809,10 +1978,10 @@ $('join').onclick = () => {
     Object.values(object.userData.tracks).reduce((sum, keys) => sum + keys.length, 0), 0);
   $('join-message').textContent = count
     ? 'Seçili cisimlerde anahtar kareler var. Kareler kaldırılıp cisimler bu karedeki halleriyle birleştirilsin mi?'
-    : 'Seçili cisimler fiziksel hareket kullanıyor. Hareket kaldırılıp cisimler bu karedeki halleriyle birleştirilsin mi?';
+    : 'Seçili cisimler fiziksel hareket veya yörünge kullanıyor. Hareket kaldırılıp cisimler bu karedeki halleriyle birleştirilsin mi?';
   $('join-motion-summary').textContent = [
     count ? count + ' anahtar kare' : '',
-    physical.length ? physical.length + ' fiziksel hareketli cisim' : ''
+    physical.length ? physical.length + ' hareketli cisim' : ''
   ].filter(Boolean).join(' · ');
   pendingJoin = objects;
   joinDialog.showModal();
@@ -2482,6 +2651,7 @@ try {
           const following = getObjectById(target.userData.followTarget);
           if (following) captureFollowOffset(target, following);
         }
+        updateOrbits();
         updateFollowers();
         return;
       }
@@ -2532,6 +2702,7 @@ try {
         const target = getObjectById(object.userData.followTarget);
         if (target) captureFollowOffset(object, target);
       }
+      updateOrbits();
       updateFollowers();
       refreshTransform();
     },
@@ -2594,7 +2765,7 @@ void import('./collisions.js')
   .catch((error) => console.error('Katılık modülü yüklenemedi.', error));
 function animate(now) {
   if (playing) {
-    const next = Math.floor(((now - startedAt) * fps) / 1000);
+    const next = Math.floor(((now - startedAt) * fps * playingRate()) / 1000);
     const end = sequence?.end ?? duration;
     if (next >= end) {
       frameTo(end, true);

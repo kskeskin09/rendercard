@@ -5,6 +5,7 @@ import { colorMarkup, bindColor } from './color-editor.js';
 import { rotationPaths } from './motion.js';
 import { speedMarkup, bindSpeed } from './speed-graph.js';
 import { axes, axisHeading, axisRow } from './inspector-grid.js';
+import { orbitPlanes } from './orbit-motion.js';
 
 const choices = [
   ['Sol', 'Orta', 'Sağ'],
@@ -134,7 +135,7 @@ export function settingsMarkup(object) {
       : '') +
     '<div class="inspector-block"><h3>Animasyon</h3>' +
     '<label class="field" title="Özel bir sahne seçilirse nesne o animasyon seçiliyken görünür.">Nesnenin sahnesi<select id="scene-clip"></select></label>' +
-    '<label class="field">Konum hareketi<select id="position-motion"><option value="keys">Karelerle hareket</option><option value="physics">Fiziksel ivme</option></select></label>' +
+    '<label class="field">Konum hareketi<select id="position-motion"><option value="keys">Karelerle hareket</option><option value="physics">Fiziksel ivme</option><option value="orbit">Yörünge</option></select></label>' +
     '<div id="physics-controls" hidden><div class="axis-table">' +
     axisHeading() +
     axisRow('İvme <small>m/s²</small>', vectorFields('acceleration', 'İvme')) +
@@ -145,6 +146,17 @@ export function settingsMarkup(object) {
     '</div>' +
     '<label class="field" title="Çarpışmada yüzeye dik hızın ters yönde korunan yüzdesi.">Sekme (%)<input id="object-bounce" type="number" min="0" max="100" step="any"></label>' +
     '<p class="selection-tip">Konum fiziksel hızla hesaplanır. Alttaki grafik boyutu etkiler.</p></div>' +
+    '<div id="orbit-controls" hidden>' +
+    '<label class="field">Yörünge merkezi<select id="orbit-target"></select></label>' +
+    '<label class="field" title="Bir tam turun saniye cinsinden süresi.">Periyot (s)<input type="number" id="orbit-period" min="0.1" max="3600" step="any"></label>' +
+    '<div class="orbit-pair"><label class="field">Düzlem<select id="orbit-plane">' + options(Object.entries(orbitPlanes)) + '</select></label>' +
+    '<label class="field">Yön<select id="orbit-direction"><option value="1">İleri</option><option value="-1">Ters</option></select></label></div>' +
+    '<label class="field">Başlangıç açısı (°)<input type="number" id="orbit-phase" min="-360" max="360" step="any"></label>' +
+    '<label class="field">Mesafe<select id="orbit-mode"><option value="fixed">Sabit · Daire</option><option value="ellipse">Değişken · Elips</option></select></label>' +
+    '<div class="orbit-pair"><label class="field"><span id="orbit-near-label">Yarıçap (m)</span><input type="number" id="orbit-near" min="0.01" max="1000" step="any"></label>' +
+    '<label id="orbit-far-field" class="field" hidden>En uzak (m)<input type="number" id="orbit-far" min="0.01" max="1000" step="any"></label></div>' +
+    speedMarkup('orbit', 'Yörünge') +
+    '<p class="selection-tip">Grafik tur içindeki ilerlemeyi değiştirir. Periyot sabit kalır. Anahtar kareler dönüşü ve boyutu ayarlar.</p></div>' +
     speedMarkup('linear', 'Konum ve boyut') +
     (!object.isLight ? '<label class="field">Dönüş hareketi<select id="rotation-motion"><option value="keys">Karelerle dönüş</option><option value="physics">Açısal ivme ve hız</option></select></label>' +
     '<div id="angular-physics" hidden><div class="axis-table">' + axisHeading() +
@@ -168,6 +180,7 @@ export function bindSettings(
     changed,
     toggleSolid,
     followOptions,
+    orbitOptions,
     setFollow,
     collisionChanged,
     collisionReady,
@@ -436,14 +449,56 @@ export function bindSettings(
       }
     );
   }
-  $('position-motion').value = data.positionMode;
-  $('physics-controls').hidden = data.positionMode !== 'physics';
-  $('position-motion').onchange = (event) => {
-    setMotion(() => {
-      data.positionMode = event.target.value;
-    });
+  const positionMode = $('position-motion');
+  function paintMotion() {
+    positionMode.value = data.positionMode;
     $('physics-controls').hidden = data.positionMode !== 'physics';
+    $('orbit-controls').hidden = data.positionMode !== 'orbit';
+  }
+  paintMotion();
+  $('position-motion').onchange = (event) => {
+    const value = event.currentTarget.value;
+    setMotion(() => {
+      data.positionMode = value;
+    }, value === 'orbit' ? 'orbit' : 'linear');
+    paintMotion();
   };
+  const orbit = data.orbit;
+  const target = $('orbit-target');
+  target.replaceChildren(new Option('Merkez seç', ''), ...orbitOptions.map(center => new Option(center.name, center.userData.objectId)));
+  target.value = orbit.target ?? '';
+  target.onchange = () => setMotion(() => { orbit.target = target.value || null; }, 'orbit');
+  for (const field of ['plane', 'direction', 'mode']) {
+    const input = $('orbit-' + field);
+    input.value = orbit[field];
+    input.onchange = () => setMotion(() => {
+      orbit[field] = field === 'direction' ? Number(input.value) : input.value;
+      paintOrbitDistances();
+    }, 'orbit');
+  }
+  function paintOrbitDistances() {
+    $('orbit-near-label').textContent = orbit.mode === 'fixed' ? 'Yarıçap (m)' : 'En yakın (m)';
+    $('orbit-far-field').hidden = orbit.mode !== 'ellipse';
+    $('orbit-near').value = orbit.near;
+    $('orbit-far').value = orbit.far;
+  }
+  paintOrbitDistances();
+  for (const field of ['period', 'phase', 'near', 'far']) {
+    const input = $('orbit-' + field);
+    input.value = orbit[field];
+    input.onchange = () => {
+      const value = input.valueAsNumber;
+      if (Number.isFinite(value)) setMotion(() => {
+        orbit[field] = Math.max(Number(input.min), Math.min(Number(input.max), value));
+        if (field === 'near' && orbit.near > orbit.far) orbit.far = orbit.near;
+        if (field === 'far' && orbit.far < orbit.near) orbit.near = orbit.far;
+        paintOrbitDistances();
+      }, 'orbit');
+      input.value = orbit[field];
+    };
+  }
+  bindSpeed(panel.querySelector('[data-speed-curve="orbit"]'), orbit, 'speed',
+    update => setMotion(update, 'orbit'), status);
   for (const [field, property] of [
     ['acceleration', 'physicsAcceleration'],
     ['velocity', 'initialVelocity'],

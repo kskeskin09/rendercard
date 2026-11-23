@@ -1,4 +1,5 @@
 const icons = {
+  sky: '<path d="M3 17h18m-15 0a6 6 0 0 1 12 0M12 3v3M4 7l2 2m14-2-2 2"/>',
   ruler: '<path d="m3 15 12-12 6 6L9 21l-6-6Zm10-10 3 3M9 9l3 3m-7 1 3 3"/>',
   eye: '<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/>',
   eyeOff:

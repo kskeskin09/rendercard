@@ -12,6 +12,7 @@ import { updateTileBounds } from './tiles.js';
 import { axisLabels, changeAxisView, resizeAxisView, stopOrbitMotion } from './axis-view.js';
 import { createMeasurement } from './measurement.js';
 import { fitRenderFrame } from './render-settings.js';
+import { skyTexture } from './sky-texture.js';
 
 export function createViewport(
   element,
@@ -52,7 +53,10 @@ export function createViewport(
   element.prepend(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#26322b');
+  const backgroundColor = new THREE.Color('#26322b');
+  let backgroundTexture;
+  let backgroundTile;
+  scene.background = backgroundColor;
   scene.add(root);
   const camera = new THREE.PerspectiveCamera(35, 1, 0.08, 160);
   const shot = new THREE.PerspectiveCamera(35, 1, 0.08, 160);
@@ -789,7 +793,14 @@ export function createViewport(
       scene.fog = settings.enabled
         ? new THREE.Fog(settings.color, settings.near, settings.far)
         : null;
-      scene.background.set(settings.enabled ? settings.color : '#26322b');
+      const tile = settings.skyMode === 'tile' ? settings.skyTile : undefined;
+      if (tile !== backgroundTile) {
+        backgroundTexture?.dispose();
+        backgroundTexture = tile && skyTexture(tile, 1024, 512, true);
+        backgroundTile = tile;
+      }
+      backgroundColor.set(settings.skyMode === 'color' ? settings.skyColor : settings.enabled ? settings.color : '#26322b');
+      scene.background = backgroundTexture ?? backgroundColor;
       defaultLights.visible = settings.defaultLight;
     },
     setShot(object, preview, output) {

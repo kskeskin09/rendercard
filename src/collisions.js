@@ -358,7 +358,7 @@ export function followCamera(root, camera, desired) {
 
 function isStatic(object, root) {
   for (let node = object; node && node !== root; node = node.parent) {
-    if (hasKeys(node) || node.userData.positionMode === 'physics' || node.userData.rotationMode === 'physics')
+    if (hasKeys(node) || ['physics', 'orbit'].includes(node.userData.positionMode) || node.userData.rotationMode === 'physics')
       return false;
   }
   return true;

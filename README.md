@@ -48,12 +48,15 @@ Kaydedilmemiş proje değişiklikleri varsa Windows uygulaması çıkarken onay 
 - **Yüzeye sığdır** her yüzeye bir desen yerleştirir ve yüzde ayarını saklar. **Varsayılan** karonun kendi rengini, **Özel** renk paletindeki seçiminizi kullanır.
 - **Yerleşim → Nesne işlemi → Negatif · Delik aç** ile bir kesici oluşturun. Negatif nesne pozitiflerle kesiştiğinde kesişim hacmini çıkarır. Tek başına normal görünür. **Birleştir**, kesici nesneleri tüketir ve kalan geometriyi pozitif tek bir ağ olarak kaydeder. Geometrinin tamamı kesildiyse sahnede nesne kalmaz. Birleşik ağa **Görünüm** bölümünden tek renk ya da karo verebilir veya parça renklerini koruyabilirsiniz.
 - **Işık** ile bağımsız bir noktasal ışık yerleştirin. **Varsayılan ışık** sahneyi hazır ışıklarla aydınlatır. Bir cismin **Işık yay** seçeneği, cismin yüzeyini parlatır ve merkezini takip eden bir ışık ekler. **Sis** menüsünden paletle renk seçebilir, başlangıç ve tam sis mesafesini belirleyebilirsiniz.
+- **Gökyüzü** menüsünde arka planı düz renge, **Açık gökyüzü** veya **Yıldızlar** dokusuna ayarlayın. Varsayılan ayar sis rengini izler. Bu iki doku nesne karolarında da kullanılabilir.
 
 ## Animasyon sahneleri
 
 Zaman çizelgesindeki **Animasyonlar** menüsünden kanal ekleyip silebilirsiniz. **Düzenlenen animasyon** kareleri hangi kanala kaydedeceğinizi belirler. **Seçileni oynat** işaretlileri eşzamanlı, **Sırayla oynat** listedeki sırayla oynatır. **Toplu oynat** bütün kanalları kare 0'dan eşzamanlı başlatır. Bir nesne her animasyonda görünebilir veya tek bir sahneye ait olabilir. Birden çok işaretli kanal aynı anda aynı nesneye poz veriyorsa, çakışan aralıkta listede daha sonraki kanal önceliklidir.
 
 **Karelerle hareket** modunda ayrı konum ve dönüş grafikleri geçişin başlangıç, orta ve bitişindeki göreli hızı belirler. **Fiziksel ivme** modunda doğrusal başlangıç hızı (m/s) ve ivme (m/s²) dünya eksenlerinde ayarlanır. **Açısal ivme ve hız** modunda dönüş başlangıç hızı (°/s) ve ivmesi (°/s²) ayrı belirlenir. Zemin veya sabit katı bir engelle temasta doğrusal ve açısal sekme kendi yüzdelerini kullanır. İvme temas sonrasında da devam eder. Fiziksel hareket açıkken hız grafiği, anahtar kareli kanallara uygulanır.
+
+**Konum hareketi → Yörünge** ile bir merkez nesnesi seçin. Merkez hareket ederse yörünge de onunla taşınır. Periyot bir turun saniye cinsinden süresidir. **Sabit** modunda tek yarıçap, **Değişken** modunda en yakın ve en uzak mesafe ayarlanır. Düzlem, yön ve başlangıç açısı konumu belirler. Yörünge hız grafiği tur içinde ilerlemeyi değiştirir ve periyodu korur. Anahtar kareler dönüş ve boyutu kontrol etmeye devam eder.
 
 **Zemine tepki verir** kutusu, nesnenin sahne zemini olan Y = 0 ile fiziksel temasını açar veya kapatır. Katı nesnelerle temas kendi ayarlarını kullanır.
 
@@ -62,6 +65,8 @@ Dönüşte **Kısa yol** veya **Uzun yol** yönelimi izler. **X, Y, Z açıları
 Yeni **Kamera**, yere paralel olarak sahnenin −Z yönüne bakar. Düzenleyicide kamera gövdesi ve baktığı yönde saydam bir çerçeve görünür. Düzenleme bakışı bir kameraya yaklaştığında o kameranın işaretçisi gizlenir ve uzaklaşınca geri görünür. Zaman çizelgesindeki **Kamera → Bu karede geç** komutu seçili animasyona kesme ekler. Oynatma ve dışa aktarma ilgili karedeki kamerayı kullanır.
 
 Her nesnenin kareleri kendi satırındadır. Kamera geçişleri ayrı satırda gösterilir. Kareyi sağ tıklayarak taşıyabilir, silebilir veya kopyalayabilirsiniz. Kopyalanan pozu, hedef nesne ve kareyi seçip **Kareyi yapıştır** ile uygulayın. Kamera geçişinin hedefi sağ tık menüsünden değişir.
+
+Zaman çizelgesindeki **Hız** yalnızca düzenleyici oynatmasını etkiler. Bir seferde en fazla 240 karelik aralık görünür. **Zoom** aralığı daraltır. Tüm çizelge görünmediğinde alt kaydırıcı veya çizelge üzerindeki tekerlekle zamanı kaydırın. Dikey şerit kaydırması için şerit adlarının üzerinde tekerleği veya çizelgede Shift ile tekerleği kullanın.
 
 Kamera sıfırlama düğmesine sol tıklamak varsayılan görünümü açar. Sağ tıklayıp kamera seçtiğinizde o açıdan serbestçe dolaşabilirsiniz. Görünüm değiştirirken kayma ve dönme durur. Önceki görünüme döndüğünüzde en son kaldığınız noktadan devam edersiniz. Oynatmayı duraklatınca son kamera açısı korunur. Kamera silinirse ona ait geçiş işaretleri de kalkar. **Kamera takibi** seçilen nesnenin merkezine bakar ve takip başlarken ölçülen uzaklığı ve yönü korur. **Katı cisimlerden etkilen** açıkken kamera engel boyunca hareket edebilir ve yol açılınca takip konumuna geri döner. **Mesafeyi yeniden al** mevcut konumu yeni takip konumu olarak kullanır.
 

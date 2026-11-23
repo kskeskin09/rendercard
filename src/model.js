@@ -34,13 +34,18 @@ import { roundedPolygon } from './rounded-polygon.js';
 import { defaultRenderSize, validRenderSize } from './render-settings.js';
 import { updateOpacity } from './opacity.js';
 import { releaseCut, sceneCuts } from './boolean-cuts.js';
+import { skyTiles } from './sky-texture.js';
+import { defaultOrbit, orbitPlanes } from './orbit-motion.js';
 
 export const defaultAtmosphere = {
   defaultLight: false,
   enabled: false,
   color: '#26322b',
   near: 5,
-  far: 20
+  far: 20,
+  skyMode: 'auto',
+  skyColor: '#26322b',
+  skyTile: 'clearSky'
 };
 
 export const types = {
@@ -54,7 +59,7 @@ export const types = {
   camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 10;
+export const projectVersion = 11;
 export const shapeSides = [3, 4, 5, 6, 8, 16, 32, 64];
 export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid'].includes(type);
 const channels = ['position', 'rotation', 'scale'];
@@ -88,6 +93,7 @@ const settingsDefaults = {
   edgeRadii: null,
   positionMode: 'keys',
   physicsClip: 'main',
+  orbit: defaultOrbit,
   sceneClip: null,
   speedProfile: null,
   rotationMode: 'keys',
@@ -523,6 +529,16 @@ export function decodeProject(project) {
     );
   const validClipId = (id) =>
     typeof id === 'string' && /^(main|clip-[0-9a-f-]{1,36})$/.test(id);
+  const validOrbit = value =>
+    value && (value.target == null || (typeof value.target === 'string' && /^[a-z0-9-]{1,64}$/i.test(value.target))) &&
+    validClipId(value.clip) &&
+    Number.isFinite(value.period) && value.period >= .1 && value.period <= 3600 &&
+    Object.hasOwn(orbitPlanes, value.plane) && [-1, 1].includes(value.direction) &&
+    ['fixed', 'ellipse'].includes(value.mode) &&
+    Number.isFinite(value.near) && Number.isFinite(value.far) &&
+    value.near >= .01 && value.far >= value.near && value.far <= 1000 &&
+    Number.isFinite(value.phase) && Math.abs(value.phase) <= 360 &&
+    numericTuple(value.speed) && value.speed.every(speed => speed >= 0 && speed <= 200) && value.speed.some(Boolean);
   const validSettings = (data) =>
     (data.rotationMode == null || ['keys', 'physics'].includes(data.rotationMode)) &&
     [data.angularVelocity, data.angularAcceleration].every(tuple => tuple == null || (numericTuple(tuple) && tuple.every(value => Math.abs(value) <= 3600))) &&
@@ -570,7 +586,8 @@ export function decodeProject(project) {
       (numericTuple(data.physicsAcceleration) &&
         data.physicsAcceleration.every((value) => Math.abs(value) <= 1000))) &&
     (data.positionMode == null ||
-      ['keys', 'physics'].includes(data.positionMode)) &&
+      ['keys', 'physics', 'orbit'].includes(data.positionMode)) &&
+    (data.orbit == null || validOrbit(data.orbit)) &&
     (data.physicsClip == null || validClipId(data.physicsClip)) &&
     (data.angularClip == null || validClipId(data.angularClip)) &&
     (data.sceneClip == null || validClipId(data.sceneClip)) &&
@@ -688,7 +705,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, 5, 6, 7, 8, 9, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, projectVersion].includes(project?.version) ||
     (project.renderSize != null && !validRenderSize(project.renderSize)) ||
     (project.name != null && (typeof project.name !== 'string' || project.name.length > 80 || !project.name.trim())) ||
     !validFrame(project.duration) ||
@@ -749,7 +766,10 @@ export function decodeProject(project) {
     !Number.isFinite(atmosphere.near) ||
     !Number.isFinite(atmosphere.far) ||
     atmosphere.near < 0 ||
-    atmosphere.far <= atmosphere.near
+    atmosphere.far <= atmosphere.near ||
+    !['auto', 'color', 'tile'].includes(atmosphere.skyMode) ||
+    !/^#[0-9a-f]{6}$/i.test(atmosphere.skyColor) ||
+    !Object.hasOwn(skyTiles, atmosphere.skyTile)
   ) {
     throw new Error('Geçersiz sis ayarı');
   }

@@ -302,7 +302,7 @@ kbd {
 }
 .center {
   display: grid;
-  grid-template-rows: 48px minmax(220px, 1fr) 158px;
+  grid-template-rows: 48px minmax(220px, 1fr) 184px;
   min-height: 0;
   min-width: 0;
   background: #fff;
@@ -469,7 +469,7 @@ kbd {
   border-top: 1px solid var(--line);
   padding: 10px 13px 9px;
   display: grid;
-  grid-template-rows: 32px 1fr 23px;
+  grid-template-rows: 32px minmax(48px, 1fr) 22px 23px;
   gap: 7px;
   overflow: hidden;
 }
@@ -765,7 +765,7 @@ kbd {
   .center {
     grid-row: 1;
     grid-column: 1/-1;
-    grid-template-rows: 42px minmax(300px, 52vh) 154px;
+    grid-template-rows: 42px minmax(300px, 52vh) 180px;
   }
   .sidebar,
   .inspector {
@@ -1204,16 +1204,20 @@ kbd {
 .clip-row > button {
   color: #a13029;
 }
-.fog-menu-wrap {
+.fog-menu-wrap, .sky-menu-wrap {
   position: relative;
 }
-.fog-menu-wrap summary {
+.fog-menu-wrap summary, .sky-menu-wrap summary {
   padding: 5px 8px;
   cursor: pointer;
   border: 1px solid var(--line);
   border-radius: 5px;
   font-size: 12px;
 }
+.sky-menu-wrap summary { display: flex; align-items: center; gap: 4px; list-style: none; }
+.sky-menu-wrap .fog-menu { left: 0; right: auto; min-width: 190px; }
+.sky-menu-wrap select { width: 100%; }
+.orbit-pair { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 5px; }
 .fog-menu {
   top: 31px;
   min-width: 152px;
@@ -1399,6 +1403,7 @@ textarea,
   .viewport-actions #wireframe span:last-child {
     display: none;
   }
+  .sky-label { display: none; }
 }
 .object-entry { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 2px; align-items: center; }
 .object-eye { min-width: 20px; width: 22px; padding: 0; min-height: 26px; color: #64705b; }
@@ -1533,3 +1538,11 @@ textarea,
 }
 #track-name > button.selected { background: #e3edce; }
 #paste-key { min-height: 21px; padding: 0 7px; font-size: 10px; }
+
+.timeline-navigation { min-width: 0; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 10px; }
+.timeline-navigation label { display: flex; align-items: center; gap: 4px; }
+.timeline-navigation select { font: inherit; color: inherit; min-width: 38px; padding: 1px; }
+.timeline-navigation input { accent-color: #78972f; margin: 0; height: 15px; }
+#timeline-zoom { width: clamp(46px, 8vw, 85px); }
+#timeline-scroll { min-width: 26px; flex: 1; }
+#timeline-range { white-space: nowrap; margin-left: auto; font-variant-numeric: tabular-nums; }

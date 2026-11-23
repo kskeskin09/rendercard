@@ -10,10 +10,10 @@ export const colorMarkup = `<div class="field">Renk<div class="color-row">
   <button id="pick-color" class="quiet scene-pick" title="Sahnenin render renginden örnek al. İptal etmek için tekrar bas." aria-label="Sahneden renk seç" aria-pressed="false">⌾</button>
 </div></div>`;
 
-export function fogColorMarkup() {
+export function atmosphereColorMarkup(prefix, title) {
   return colorMarkup
-    .replace('>Renk<div', '>Sis rengi<div')
-    .replace(/id="([^"]+)"/g, 'id="fog-$1"');
+    .replace('>Renk<div', '>' + title + '<div')
+    .replace(/id="([^"]+)"/g, 'id="' + prefix + '$1"');
 }
 
 export function readColor(value, format) {

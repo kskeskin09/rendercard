@@ -168,6 +168,20 @@
         <div class="viewport-bar">
           <h1>Sahne görünümü</h1>
           <div class="viewport-actions">
+            <details class="sky-menu-wrap">
+              <summary class="quiet" title="Gökyüzü rengi ve dokusu" aria-label="Gökyüzü">
+                <span data-icon="sky"></span><span class="sky-label">Gökyüzü</span>
+              </summary>
+              <div class="menu fog-menu">
+                <label class="field">Arka plan<select id="sky-mode">
+                  <option value="auto">Varsayılan · Sis rengini izle</option>
+                  <option value="color">Renk</option>
+                  <option value="tile">Doku</option>
+                </select></label>
+                <div id="sky-palette" hidden></div>
+                <label id="sky-texture-field" class="field" hidden>Gökyüzü dokusu<select id="sky-texture"></select></label>
+              </div>
+            </details>
             <details class="fog-menu-wrap">
               <summary class="quiet" title="Sahne sisi">Sis</summary>
               <div class="menu fog-menu">
@@ -441,6 +455,14 @@
                 aria-label="Geçerli kare"
               />
             </div>
+          </div>
+          <div class="timeline-navigation">
+            <label>Hız<select id="timeline-speed" aria-label="Oynatma hızı">
+              <option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option>
+            </select></label>
+            <label>Zoom<input id="timeline-zoom" type="range" min="0" max="100" value="0" aria-label="Zaman çizelgesini yakınlaştır"></label>
+            <input id="timeline-scroll" type="range" min="0" max="0" value="0" aria-label="Zaman çizelgesini kaydır" hidden>
+            <output id="timeline-range" aria-label="Görüntülenen kare aralığı"></output>
           </div>
           <div class="timeline-footer">
             <label

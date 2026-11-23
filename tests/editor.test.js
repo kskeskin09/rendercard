@@ -811,3 +811,41 @@ test('stopping a damped orbit keeps the current camera pose without residual mov
   close(target.distanceTo(controls.target), 0);
   assert.equal(controls.enableDamping, true);
 });
+
+test('orbital distance, angle profile and repeat period are independent', async () => {
+  const { defaultOrbit, orbitPosition, orderedOrbits } = await import('../src/orbit-motion.js');
+  const center = new Vector3(3, 2, -4);
+  const ellipse = { ...defaultOrbit, period: 4, mode: 'ellipse', near: 2, far: 6 };
+  close(orbitPosition(center, 0, 30, ellipse).distanceTo(center), 2);
+  close(orbitPosition(center, 60, 30, ellipse).distanceTo(center), 6);
+  close(orbitPosition(center, 120, 30, ellipse).distanceTo(orbitPosition(center, 0, 30, ellipse)), 0);
+  const circular = { ...ellipse, mode: 'fixed', plane: 'xy', direction: -1 };
+  const quarter = orbitPosition(center, 30, 30, circular);
+  close(quarter.x, center.x);
+  close(quarter.y, center.y - 2);
+  close(quarter.z, center.z);
+  const accelerated = orbitPosition(center, 60, 30, { ...ellipse, speed: [0, 100, 200] });
+  close(accelerated.x, center.x);
+  close(accelerated.z, center.z + 3);
+
+  const root = new Group();
+  const a = makeObject('box'), b = makeObject('box'), c = makeObject('box');
+  root.add(a,b,c);
+  assert.deepEqual(orderedOrbits(new Map([[a,b],[b,c]])).map(([item])=>item), [b,a]);
+  assert.deepEqual(orderedOrbits(new Map([[a,b],[b,a]])), []);
+  a.userData.positionMode = 'orbit';
+  a.userData.orbit = { ...ellipse, target: b.userData.objectId };
+  const project = encodeProject(root, 180, undefined, { skyMode: 'tile', skyTile: 'stars' });
+  const loaded = decodeProject(project);
+  assert.equal(loaded.objects[0].userData.orbit.target, loaded.objects[1].userData.objectId);
+  assert.equal(loaded.objects[0].userData.orbit.far, 6);
+  assert.equal(loaded.atmosphere.skyMode, 'tile');
+  assert.equal(loaded.atmosphere.skyTile, 'stars');
+});
+
+test('the timeline keeps 240 frames or fewer visible and bounds panning', async () => {
+  const { timelineWindow } = await import('../src/timeline-window.js');
+  assert.deepEqual(timelineWindow(120, 0, 32), { start: 0, end: 120, span: 120 });
+  assert.deepEqual(timelineWindow(480, 0, 900), { start: 240, end: 480, span: 240 });
+  assert.deepEqual(timelineWindow(120, 100, 30), { start: 30, end: 36, span: 6 });
+});

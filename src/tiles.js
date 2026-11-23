@@ -6,9 +6,10 @@ import {
   SRGBColorSpace,
   Vector3
 } from 'three';
+import { skyTexture, skyTiles } from './sky-texture.js';
 
-export const tiles = { checker: 'Dama', ceramic: 'Seramik', brick: 'Tuğla', grass: 'Çim', asphalt: 'Asfalt' };
-const tileColors = { checker: '#eeeeee', ceramic: '#e0cdb1', brick: '#b3553e', grass: '#527f35', asphalt: '#515256' };
+export const tiles = { checker: 'Dama', ceramic: 'Seramik', brick: 'Tuğla', grass: 'Çim', asphalt: 'Asfalt', ...skyTiles };
+const tileColors = { checker: '#eeeeee', ceramic: '#e0cdb1', brick: '#b3553e', grass: '#527f35', asphalt: '#515256', clearSky: '#ffffff', stars: '#ffffff' };
 
 export function updateTileBounds(material, buffer) {
   const mapping = material.userData.tileMapping;
@@ -58,10 +59,8 @@ function applyWorldMapping(material) {
   };
 }
 
-export function applyTile(material, settings) {
-  material.map?.dispose();
-  material.map = null;
-  if (settings.finish === 'tile') {
+function surfaceTexture(tile) {
+    if (Object.hasOwn(skyTiles, tile)) return skyTexture(tile, 128, 128);
     const size = 64;
     const pixels = new Uint8Array(size * size * 4);
     for (let y = 0; y < size; y++) {
@@ -69,13 +68,13 @@ export function applyTile(material, settings) {
         const noise = (((x * 1640531513) ^ (y * 1013904223) ^ (x * y * 7919)) >>> 8) & 63;
         const cellX = (x + (y < 32 ? 16 : 0)) % 32;
         const value =
-          settings.tile === 'grass' ? 177 + noise * 1.18
-            : settings.tile === 'asphalt' ? 201 + noise * .85
-            : settings.tile === 'checker'
+          tile === 'grass' ? 177 + noise * 1.18
+            : tile === 'asphalt' ? 201 + noise * .85
+            : tile === 'checker'
             ? x < 32 === y < 32
               ? 248
               : 126
-            : settings.tile === 'brick'
+            : tile === 'brick'
               ? cellX < 2 || y % 32 < 2
                 ? 99
                 : 220 + ((x * 7 + y * 13) % 30)
@@ -90,7 +89,13 @@ export function applyTile(material, settings) {
     map.wrapS = map.wrapT = RepeatWrapping;
     map.magFilter = map.minFilter = LinearFilter;
     map.needsUpdate = true;
-    material.map = map;
+    return map;
+}
+
+export function applyTile(material, settings) {
+  material.map?.dispose();
+  material.map = settings.finish === 'tile' ? surfaceTexture(settings.tile) : null;
+  if (material.map) {
     material.userData.tileSize ??= { value: settings.tileScale };
     material.userData.tileMapping ??= {
       fit: { value: false }, origin: { value: new Vector3() }, size: { value: new Vector3(1, 1, 1) },
