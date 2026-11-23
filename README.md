@@ -25,7 +25,7 @@ Animasyon 30 FPS olarak WebM veya MP4 biçiminde yazılır. Tarayıcı sürümü
 
 1. Sol panelden **Kutu** veya **Piramit** ekleyin. Sağ panelde konumu, dönüşü, boyutu ve rengi ayarlayın. Üstteki sahne adını doğrudan düzenleyebilirsiniz.
 2. Sahne listesinden aynı düzeydeki nesneleri **Shift** ile seçip **Grupla** düğmesine tıklayın. Grup ortak bir dönüşümle hareket eder ve alt nesneler düzenlenebilir kalır.
-3. **Tel kafes** düğmesiyle üçgen kenarlarını görün. Kutunun altı yüzü ikişer üçgenden oluşur. Piramitte **Taban kenarı** ayarıyla yüzey sayısını değiştirebilirsiniz. Toplam üçgen sayısı alt çubukta görünür.
+3. **Tel kafes** düğmesiyle üçgen kenarlarını görün. Kutuda **Taban kenarı** üst ve alt yüzeyi birlikte değiştirir. Piramitte bu ayar tabanın kenar sayısını belirler. Piramit ve çokgen kutuda **Kenar yumuşatma** kenarlar ve köşeler için kullanılır. Toplam üçgen sayısı alt çubukta görünür.
 4. Nesneyi seçip ilk pozda **Kare ekle** düğmesine tıklayın. Zaman çizelgesinde başka bir kareye gidin, nesneyi taşıyın, döndürün veya ölçekleyin ve yeni pozu kaydedin. **Oynat** ile aradaki hareketi izleyin.
 5. **Kaydet** ile düzenlenebilir JSON projesini kaydedin. **Render al** menüsündeki **Önizleme izle** çıktıyı zaman çizelgesiyle gösterir. Aynı menüden PNG veya video kaydedebilirsiniz.
 
@@ -53,7 +53,7 @@ Zaman çizelgesindeki **Animasyonlar** menüsünden kanal ekleyip silebilirsiniz
 
 Dönüşte **Kısa yol** veya **Uzun yol** yönelimi izler. **X, Y, Z açılarını izle** seçeneği her eksende girilen açı değişimini ve tam turu korur.
 
-Yeni **Kamera**, yere paralel olarak sahnenin −Z yönüne bakar. Düzenleyicide kamera gövdesi ve baktığı yönde saydam bir çerçeve görünür. Zaman çizelgesindeki **Kamera → Bu karede geç** komutu seçili animasyona kesme ekler. Oynatma ve dışa aktarma ilgili karedeki kamerayı kullanır.
+Yeni **Kamera**, yere paralel olarak sahnenin −Z yönüne bakar. Düzenleyicide kamera gövdesi ve baktığı yönde saydam bir çerçeve görünür. Düzenleme bakışı bir kameraya yaklaştığında o kameranın işaretçisi gizlenir ve uzaklaşınca geri görünür. Zaman çizelgesindeki **Kamera → Bu karede geç** komutu seçili animasyona kesme ekler. Oynatma ve dışa aktarma ilgili karedeki kamerayı kullanır.
 
 Kare veya kamera geçişi işaretini sağ tıklayarak **Taşı** ya da **Sil** komutlarını kullanın. Taşımak için yeni kareye sol tıklayın. Kamera geçişinin hedefini aynı menüden değiştirebilirsiniz. Bir animasyon satırındaki kare işareti o kareye kaydedilmiş tüm nesne pozlarını temsil eder.
 
@@ -65,4 +65,4 @@ Kamera sıfırlama düğmesine sol tıklamak varsayılan görünümü açar. Sa�
 
 Grup çözülürken dönüşümler çocuk nesnelere aktarılır. Grubu çözebilmek için grubun anahtar karelerini kaldırın ve üç eksendeki grup ölçeğini eşitleyin.
 
-Sahne araçlarındaki **Birleştir** düğmesi, seçili ve animasyonsuz nesnelerin üçgenlerini tek bir ağda toplar ve renklerini korur. Pozitif nesneler birbiri içine yerleştirildiyse kendi yüzeylerini korur. Seçimdeki negatif nesnelerin açtığı delikler kalıcılaşır.
+Sahne araçlarındaki **Birleştir** düğmesi, birbirine değmeyen nesneleri de tek ağda toplar. Pozitif nesneleri birleştirdiğinizde **Orta**, kaynak nesnelerin merkezlerinin ortalamasıdır. Bu nokta iki ayrı nesne arasında boşluğa düşebilir. Birleştirme animasyonsuz nesnelerde çalışır ve renkleri korur. Seçimdeki negatif nesnelerin açtığı delikler kalıcılaşır.

@@ -46,6 +46,7 @@ function shapeFor(buffer, matrix, settings, cut = false) {
   if (
     !cut && orthogonal &&
     settings.type === 'box' &&
+    (settings.sides ?? 4) === 4 &&
     !settings.radius &&
     !settings.edgeRadii?.some(Boolean)
   ) {

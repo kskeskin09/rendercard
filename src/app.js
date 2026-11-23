@@ -23,6 +23,7 @@ import {
   anchorScale,
   localBounds,
   groundObject,
+  hasVolumeAtOrigin,
   translateWorld,
   fitPivot,
   fitParentPivots
@@ -198,6 +199,7 @@ function describeEdit(before, after) {
     name: 'Adı değiştir',
     solid: 'Katılığı değiştir',
     edgeRadii: 'Kenarları yuvarla',
+    polygonRoundness: 'Kenarları yumuşat',
     segments: 'Geometriyi düzenle',
     detail: 'Yüzey ayrıntısını değiştir',
     color: 'Rengi değiştir',
@@ -1705,9 +1707,9 @@ $('join').onclick = () => {
   const objects = [...selected];
   if ($('join').disabled) return;
   if (objects.some(hasKeys)) {
-    status(
-      'Ağları birleştirmek için seçili nesnelerin anahtar karelerini kaldır.'
-    );
+    const message = 'Ağları birleştirmek için seçili nesnelerin anahtar karelerini kaldır.';
+    status(message);
+    toast(message, 'warning');
     return;
   }
   setPlaying(false);
@@ -1732,7 +1734,11 @@ $('join').onclick = () => {
     });
     select(merged);
     setWireframe(wireframe);
-    status('Geometri tek bir ağda birleştirildi.');
+    if (merged.userData.mergeMidpoint && !hasVolumeAtOrigin(merged.geometry)) {
+      const message = 'Nesneler birleştirildi. Ortak merkez boşlukta kaldı. Dönüş tutamacı bu noktayı kullanır.';
+      status(message);
+      toast(message, 'warning');
+    } else status('Geometri tek bir ağda birleştirildi.');
   }, 'Ağları birleştir');
 };
 $('ungroup').onclick = () => {

@@ -1,4 +1,4 @@
-import { Box3, Euler, Matrix4, Vector3 } from 'three';
+import { Box3, Euler, Matrix4, Ray, Vector3 } from 'three';
 import { posesOf } from './clips.js';
 
 export function localBounds(object) {
@@ -20,6 +20,36 @@ export function localBounds(object) {
   return result;
 }
 
+export function hasVolumeAtOrigin(geometry) {
+  const ray = new Ray(new Vector3(), new Vector3(.523, .731, .447).normalize());
+  const { position } = geometry.attributes;
+  const a = new Vector3();
+  const b = new Vector3();
+  const c = new Vector3();
+  const hit = new Vector3();
+  const ab = new Vector3();
+  const ac = new Vector3();
+  const crossings = new Map();
+  const epsilon = 1e-7;
+  const count = Math.min(geometry.index.count - geometry.drawRange.start, geometry.drawRange.count);
+  const end = geometry.drawRange.start + count;
+  for (let i = geometry.drawRange.start; i + 2 < end; i += 3) {
+    a.fromBufferAttribute(position, geometry.index.getX(i));
+    b.fromBufferAttribute(position, geometry.index.getX(i + 1));
+    c.fromBufferAttribute(position, geometry.index.getX(i + 2));
+    if (!ray.intersectTriangle(a, b, c, false, hit)) continue;
+    const distance = hit.dot(ray.direction);
+    if (distance <= epsilon) return true;
+    const direction = ab.subVectors(b, a).cross(ac.subVectors(c, a)).dot(ray.direction);
+    // Shared edges can report the same crossing through two triangles.
+    const bucket = Math.round(distance / epsilon);
+    crossings.set(bucket, (crossings.get(bucket) ?? 0) | (direction > 0 ? 1 : 2));
+  }
+  let enclosed = 0;
+  for (const crossing of crossings.values()) enclosed += crossing === 1 ? 1 : crossing === 2 ? -1 : 0;
+  return enclosed > 0;
+}
+
 const axes = ['x', 'y', 'z'];
 
 export function changePivot(object, axis, value) {
@@ -33,7 +63,13 @@ export function fitPivot(object) {
   if (bounds.isEmpty()) return;
   const delta = bounds.getCenter(new Vector3());
   const half = bounds.getSize(new Vector3()).multiplyScalar(0.5);
-  delta.add(half.multiply(new Vector3().fromArray(object.userData.pivot)));
+  const { mergeMidpoint, offset, pivot } = object.userData;
+  delta.add(half.multiply(new Vector3().fromArray(pivot)));
+  if (mergeMidpoint && object.userData.type === 'mesh') {
+    for (const [i, side] of pivot.entries()) {
+      if (side === 0) delta.setComponent(i, offset[i]);
+    }
+  }
   if (delta.lengthSq() < 1e-12) return;
   object.position.add(
     delta.clone().multiply(object.scale).applyQuaternion(object.quaternion)

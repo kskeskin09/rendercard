@@ -446,7 +446,7 @@ export function createViewport(
         ? undefined
         : ray.intersectObject(lightMarkers)[0];
     const cameraHit = cameraHelpers.visible && ray.intersectObjects(
-      [...markers.values()].flatMap(marker => marker.children.slice(0, 3)), false
+      [...markers.values()].filter(marker => marker.visible).flatMap(marker => marker.children.slice(0, 3)), false
     )[0];
     const hit = withSceneCuts(root, () => ray
       .intersectObjects(root.children, true)
@@ -562,7 +562,7 @@ export function createViewport(
           (pivots.visible || object.isLight || object.isCamera)
         ) {
           point.setFromMatrixPosition(object.matrixWorld);
-          if (pivots.visible) positions.push(point.x, point.y, point.z);
+          let showPivot = pivots.visible;
           if (object.isLight) {
             visibleLights.push(object);
             lights.push(point.x, point.y, point.z);
@@ -572,7 +572,13 @@ export function createViewport(
             const marker = cameraMarker(object);
             marker.position.copy(point);
             object.getWorldQuaternion(marker.quaternion);
+            // The view plane reaches 0.7 units past the camera body.
+            // A larger distance on re-entry prevents flicker at the boundary.
+            const near = marker.visible ? 1.2 : 1.4;
+            marker.visible = point.distanceToSquared(renderCamera.position) > near ** 2;
+            showPivot &&= marker.visible;
           }
+          if (showPivot) positions.push(point.x, point.y, point.z);
         }
       });
       for (const [object, marker] of markers) if (!currentCameras.has(object)) {

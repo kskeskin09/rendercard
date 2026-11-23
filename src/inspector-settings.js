@@ -96,8 +96,17 @@ export function settingsMarkup(object) {
         '<label class="field">Yayılan ışık gücü (%)<input id="emission-power" type="number" min="0" max="100"></label></div>'
       : '') +
     '</div>' +
-    (type === 'box'
-      ? '<div class="inspector-block"><h3>Geometri</h3><div class="field" title="Sadece seçtiğin eksene paralel kenarları yuvarlar. Örneğin Y düşey kenarlardır.">Kenar yuvarlama (%)<div class="axis-fields">' +
+    (['box', 'prism', 'pyramid'].includes(type)
+      ? '<div class="inspector-block"><h3>Geometri</h3><label class="field" title="' +
+        (type === 'pyramid' ? 'Tabanın kenar sayısı. Kenar sayısı arttıkça şekil koniye yaklaşır.' :
+          'Üst ve alt yüzeyin kenar sayısını birlikte değiştirir. Kenar sayısı arttıkça şekil silindire yaklaşır.') +
+        '">Taban kenarı<select id="object-sides">' +
+        options(shapeSides.map(sides => [sides, sides])) + '</select></label>' +
+        (type === 'box' || type === 'pyramid'
+          ? '<label id="polygon-edge-settings" class="field" title="Şeklin kenarlarıyla birlikte birleşim köşelerini de yuvarlatır.">Kenar yumuşatma (%)<input id="polygon-roundness" type="number" min="0" max="50" step="1"></label>'
+          : '') +
+        (type === 'box'
+          ? '<div id="box-edge-settings"><div class="field" title="Sadece seçtiğin eksene paralel kenarları yuvarlar. Örneğin Y düşey kenarlardır.">Kenar yuvarlama (%)<div class="axis-fields">' +
         axes
           .map(
             (axis) =>
@@ -111,7 +120,8 @@ export function settingsMarkup(object) {
           )
           .join('') +
         '</div></div>' +
-        '<label class="field" title="Yuvarlatılmış köşeleri oluşturan yüzey sayısı. Değer arttıkça köşe daha pürüzsüz görünür.">Köşe ayrıntısı<input id="object-segments" type="number" min="1" max="12" step="1"></label></div>'
+        '<label class="field" title="Yuvarlatılmış köşeleri oluşturan yüzey sayısı. Değer arttıkça köşe daha pürüzsüz görünür.">Köşe ayrıntısı<input id="object-segments" type="number" min="1" max="12" step="1"></label></div>' : '') +
+        '</div>'
       : '') +
     (type === 'sphere'
       ? '<div class="inspector-block"><h3>Geometri</h3><label class="field">Yüzey ayrıntısı<select id="object-detail">' +
@@ -121,10 +131,6 @@ export function settingsMarkup(object) {
           [48, 'Yüksek']
         ]) +
         '</select></label></div>'
-      : '') +
-    (type === 'prism' || type === 'pyramid'
-      ? '<div class="inspector-block"><h3>Geometri</h3><label class="field" title="Kenar sayısını artırarak silindire veya koniye yaklaşabilirsin.">Taban kenarı<select id="object-sides">' +
-        options(shapeSides.map(sides => [sides, sides])) + '</select></label></div>'
       : '') +
     '<div class="inspector-block"><h3>Animasyon</h3>' +
     '<label class="field" title="Özel bir sahne seçilirse nesne o animasyon seçiliyken görünür.">Nesnenin sahnesi<select id="scene-clip"></select></label>' +
@@ -360,11 +366,28 @@ export function bindSettings(
       edit(() => rebuild(Number(event.target.value)));
   }
   if ($('object-sides')) {
-    $('object-sides').value = data.sides ?? (data.type === 'prism' ? 3 : 4);
-    $('object-sides').onchange = event => edit(() => {
-      data.sides = Number(event.target.value);
+    const sides = $('object-sides');
+    function showEdgeSettings() {
+      sides.value = data.sides ?? (data.type === 'prism' ? 3 : 4);
+      if (data.type === 'box') {
+        $('box-edge-settings').hidden = sides.value !== '4';
+        $('polygon-edge-settings').hidden = sides.value === '4';
+      }
+    }
+    showEdgeSettings();
+    sides.onchange = () => {
+      edit(() => {
+        data.sides = Number(sides.value);
+        return rebuild();
+      }, 'Taban kenarı sayısını değiştir');
+      showEdgeSettings();
+    };
+  }
+  if ($('polygon-roundness')) {
+    number('polygon-roundness', () => Math.round(data.polygonRoundness * 100), 0, 50, value => {
+      data.polygonRoundness = Math.round(value) / 100;
       return rebuild();
-    }, 'Taban kenarı sayısını değiştir');
+    });
   }
   if ($('object-color'))
     bindColor(panel, object.isLight ? object.color : object.surfaceColor ?? object.material.color, {

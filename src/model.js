@@ -30,6 +30,7 @@ import {
 } from './motion.js';
 import { profileTime, accelerationOffset } from './motion.js';
 import { roundedEdges } from './edge-geometry.js';
+import { roundedPolygon } from './rounded-polygon.js';
 import { updateOpacity } from './opacity.js';
 import { releaseCut, sceneCuts } from './boolean-cuts.js';
 
@@ -52,7 +53,7 @@ export const types = {
   camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 8;
+export const projectVersion = 9;
 export const shapeSides = [3, 4, 5, 6, 8, 16, 32, 64];
 export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid'].includes(type);
 const channels = ['position', 'rotation', 'scale'];
@@ -63,8 +64,10 @@ const settingsDefaults = {
   solid: false,
   negative: false,
   sides: null,
+  polygonRoundness: 0,
   reactsToGround: true,
   linkedSize: false,
+  mergeMidpoint: false,
   cameraId: null,
   objectId: null,
   affectsSolids: true,
@@ -118,12 +121,16 @@ export function geometry(type, detail = 24, settings = settingsDefaults) {
   const equalRadii = radii && radii.every((value) => value === radii[0]);
   const uniformRadius = equalRadii ? radii[0] : settings.radius;
   if (type === 'sphere') result = new SphereGeometry(0.5, detail, detail / 2);
-  else if (type === 'prism' || type === 'pyramid') {
+  else if (type === 'prism' || type === 'pyramid' || (type === 'box' && (settings.sides ?? 4) !== 4)) {
     const sides = settings.sides ?? (type === 'prism' ? 3 : 4);
-    result = new CylinderGeometry(type === 'pyramid' ? 0 : 0.5, 0.5, 1, sides, 1, false, Math.PI / sides);
+    const pointed = type === 'pyramid';
+    const bevelSegments = Math.max(2, Math.min(6, settings.segments ?? settingsDefaults.segments));
+    result = settings.polygonRoundness
+      ? roundedPolygon(sides, pointed, settings.polygonRoundness, bevelSegments)
+      : new CylinderGeometry(pointed ? 0 : 0.5, 0.5, 1, sides, 1, false, Math.PI / sides);
     result.computeBoundingBox();
     const size = result.boundingBox.getSize(new Vector3());
-    result.center().scale(1 / size.x, 1, 1 / size.z);
+    result.center().scale(1 / size.x, 1 / size.y, 1 / size.z);
   }
   else if (uniformRadius === 0.5 && (equalRadii || !radii)) {
     const resolution = Math.max(24, settings.segments * 8);
@@ -357,7 +364,7 @@ export function joinMeshes(objects) {
     parts.forEach((part) => {
       part.hidden = false;
     });
-  const merged = makeJoinedMesh(parts, undefined, { hidden });
+  const merged = makeJoinedMesh(parts, undefined, { hidden, mergeMidpoint: !mixed });
   merged.userData.solid = objects.some(object => (!mixed || !object.userData.negative) && object.userData.solid);
   merged.position.copy(center);
   objects.forEach(disposeObject);
@@ -520,6 +527,8 @@ export function decodeProject(project) {
     (data.angularSpeedProfile == null || (numericTuple(data.angularSpeedProfile) && data.angularSpeedProfile.every(value => value >= 0 && value <= 200) && data.angularSpeedProfile.some(Boolean))) &&
     (data.surfaceColor == null || /^#[0-9a-f]{6}$/i.test(data.surfaceColor)) &&
     (data.negative == null || typeof data.negative === 'boolean') &&
+    (data.mergeMidpoint == null || typeof data.mergeMidpoint === 'boolean') &&
+    (data.polygonRoundness == null || (Number.isFinite(data.polygonRoundness) && data.polygonRoundness >= 0 && data.polygonRoundness <= 0.5)) &&
     (data.sides == null || shapeSides.includes(data.sides)) &&
     (data.tileFit == null || typeof data.tileFit === 'boolean') &&
     (data.tileColorMode == null || ['default', 'custom'].includes(data.tileColorMode)) &&
@@ -676,7 +685,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, 5, 6, 7, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, 6, 7, 8, projectVersion].includes(project?.version) ||
     (project.name != null && (typeof project.name !== 'string' || project.name.length > 80 || !project.name.trim())) ||
     !validFrame(project.duration) ||
     project.duration < 1 ||

@@ -25,6 +25,7 @@ import {
   changePivot,
   fitParentPivots,
   groundObject,
+  hasVolumeAtOrigin,
   localBounds
 } from '../src/spatial.js';
 import { createHistory } from '../src/history.js';
@@ -616,4 +617,79 @@ test('symmetric multi-transforms preserve the shared center for translation, rot
   close(rotated[0].position.x, 2);
   close(rotated[0].position.y, -2);
   close(rotated[1].position.y, 2);
+});
+
+test('changing the box base sides produces matching top and bottom rings', () => {
+  const box = makeObject('box', 'Beşgen', '#ffffff', 24, { sides: 5 });
+  const buffer = box.geometry;
+  const group = buffer.groups[0];
+  const bottom = new Set();
+  const top = new Set();
+  for (let i = group.start; i < group.start + group.count; i++) {
+    const point = new Vector3().fromBufferAttribute(buffer.attributes.position, buffer.index.getX(i));
+    const ring = point.y > 0 ? top : bottom;
+    ring.add([point.x, point.z].map(value => value.toFixed(6)).join(','));
+  }
+  assert.equal(top.size, 5);
+  assert.deepEqual(top, bottom);
+  const size = bounds(box).getSize(new Vector3());
+  for (const dimension of size) close(dimension, 1);
+});
+
+test('rounded pyramids and prisms have closed, outward-facing meshes and persist', async () => {
+  const { computeMeshVolume } = await import('three-bvh-csg');
+  for (const [type, sides] of [['pyramid', 4], ['pyramid', 16], ['box', 5]]) {
+    const sharp = makeObject(type, undefined, undefined, 24, { sides });
+    const round = makeObject(type, undefined, undefined, 24, { sides, polygonRoundness: .28 });
+    const { index, attributes } = round.geometry;
+    assert(index.count > sharp.geometry.index.count);
+    const edges = new Map();
+    const a = new Vector3();
+    const b = new Vector3();
+    const point = i => new Vector3().fromBufferAttribute(attributes.position, index.getX(i));
+    const hash = vertex => vertex.toArray().map(value => Math.round(value * 1e5)).join(',');
+    for (let i = 0; i < index.count; i += 3) {
+      const corners = [point(i), point(i + 1), point(i + 2)];
+      const normal = new Vector3().fromBufferAttribute(attributes.normal, index.getX(i));
+      assert(a.subVectors(corners[1], corners[0]).cross(b.subVectors(corners[2], corners[0])).dot(normal) > 0);
+      const labels = corners.map(hash);
+      labels.forEach((label, j) => {
+        const edge = [label, labels[(j + 1) % 3]].sort().join(':');
+        edges.set(edge, (edges.get(edge) ?? 0) + 1);
+      });
+    }
+    assert([...edges.values()].every(count => count === 2));
+    assert(computeMeshVolume(round.geometry) > .1);
+    for (const dimension of bounds(round).getSize(new Vector3())) close(dimension, 1);
+    const root = new Group();
+    root.add(round);
+    const [restored] = decodeProject(encodeProject(root, 120)).objects;
+    assert.equal(restored.userData.sides, sides);
+    assert.equal(restored.userData.polygonRoundness, .28);
+    close(computeMeshVolume(restored.geometry), computeMeshVolume(round.geometry));
+  }
+});
+
+test('disjoint meshes join without moving their geometry and keep their shared midpoint', () => {
+  const root = new Group();
+  const small = makeObject('box');
+  const large = makeObject('box');
+  small.position.set(-2, 0, 0);
+  large.position.set(6, 0, 0);
+  large.scale.x = 3;
+  root.add(small, large);
+  const before = bounds(root);
+  const joined = joinMeshes([small, large]);
+  assert.deepEqual(root.children, [joined]);
+  close(joined.position.x, 2);
+  assert.equal(hasVolumeAtOrigin(joined.geometry), false);
+  assert.equal(hasVolumeAtOrigin(makeObject('box').geometry), true);
+  close(before.min.distanceTo(bounds(joined).min), 0);
+  close(before.max.distanceTo(bounds(joined).max), 0);
+  changePivot(joined, 'x', 1);
+  close(joined.position.x, 7.5);
+  const [restored] = decodeProject(encodeProject(root, 120)).objects;
+  changePivot(restored, 'x', 0);
+  close(restored.position.x, 2);
+  close(before.max.distanceTo(bounds(restored).max), 0);
 });
