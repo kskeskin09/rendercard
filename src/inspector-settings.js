@@ -14,6 +14,7 @@ const choices = [
   ['Sol', 'Orta', 'Sağ']
 ];
 const sizeCurveHint = 'Anahtar kareler hedef boyutu belirler. Grafik, büyüme ya da küçülmenin iki kare arasındaki zamana nasıl yayıldığını ayarlar.';
+const selectedParts = new WeakMap();
 const options = (entries) =>
   entries
     .map(
@@ -43,6 +44,7 @@ export function settingsMarkup(object) {
       ? ''
       : (object.isCamera ? '<label class="check-field"><input id="camera-collisions" type="checkbox"> Katı cisimlerden etkilen</label>' : '') +
         '<label id="solid-field" class="check-field" title="Katı yüzeylerden geçişi engeller. Açmak için nesneyi önce çakışmalardan ayır."><input id="object-solid" type="checkbox"> Katılık</label>') +
+    (object.isMesh ? '<label id="elastic-field" class="check-field" title="Yeterince dar bir nesne katı yüzeye girebilir. Yüzey geçici olarak nesnenin çevresini sarar."><input id="object-elastic" type="checkbox"> Elastiklik</label>' : '') +
     (!object.isLight && !object.isCamera
       ? '<label class="check-field" title="Fiziksel ivme modunda Y = 0 yüzeyine temas ve sekme."><input id="ground-reaction" type="checkbox"> Zemine tepki verir</label>'
       : '') +
@@ -66,6 +68,10 @@ export function settingsMarkup(object) {
       })
       .join('') +
     '</div></div></div>' +
+    '<div class="inspector-block"><h3>İskelet</h3>' +
+    '<label class="check-field" title="Nesnenin seçili merkezine, nesneyle birlikte hareket eden bir bağlantı noktası ekler."><input id="skeleton-joint" type="checkbox"> İskelet bağı</label>' +
+    '<div id="skeleton-targets" hidden><label class="field">Bağlanacak nokta<select id="skeleton-target"></select></label><button id="connect-bone" class="quiet">Kemik oluştur</button></div>' +
+    '<div id="skeleton-links" hidden><label class="field">Bağlı kemikler<select id="skeleton-link"></select></label><button id="open-bone-settings" class="quiet">Doku ayarları</button></div></div>' +
     (object.isCamera ? '<div class="inspector-block"><h3>Kamera takibi</h3>' +
       '<label class="field">Takip hedefi<select id="follow-target"></select></label>' +
       '<div id="follow-settings" hidden><output id="follow-distance"></output>' +
@@ -77,11 +83,13 @@ export function settingsMarkup(object) {
     (primitive || type === 'mesh' || type === 'letter'
       ? '<label class="field" title="Düz bir renk veya tekrarlanan bir desen seç.">Yüzey<select id="object-finish">' +
         options([
-          ...(type === 'mesh' ? [['parts', 'Parça renkleri']] : []),
+          ...(type === 'mesh' ? [['parts', 'Parça yüzeyleri']] : []),
           ['color', 'Renk'],
           ['tile', 'Tile (döşeme)']
         ]) +
         '</select></label>' +
+        (type === 'mesh' ? '<div id="mesh-part-settings"><label class="field">Parça<select id="mesh-part"></select></label>' +
+          '<label class="field">Parça yüzeyi<select id="part-finish"><option value="color">Renk</option><option value="tile">Tile (döşeme)</option></select></label></div>' : '') +
         '<div id="tile-settings" hidden><label class="field">Tile<select id="object-tile">' +
         options(Object.entries(tiles)) +
         '</select></label>' +
@@ -190,6 +198,8 @@ export function bindSettings(
     sceneChanged,
     changed,
     toggleSolid,
+    toggleElastic,
+    refreshInspector,
     followOptions,
     orbitOptions,
     setFollow,
@@ -202,13 +212,18 @@ export function bindSettings(
 ) {
   const $ = (id) => panel.querySelector('#' + id);
   const data = object.userData;
+  const elastic = $('object-elastic');
   if ($('object-sign')) {
     const sign = $('object-sign');
     sign.value = data.negative ? 'negative' : 'positive';
-    sign.onchange = () => edit(() => {
+    sign.onchange = () => {
+      edit(() => {
       data.negative = sign.value === 'negative';
+      if (data.negative) data.elastic = false;
       return changed(object);
-    }, 'Nesnenin işaretini değiştir');
+      }, 'Nesnenin işaretini değiştir');
+      paintElastic();
+    };
   }
   if ($('ground-reaction')) {
     $('ground-reaction').checked = data.reactsToGround;
@@ -224,7 +239,20 @@ export function bindSettings(
       const input = event.target;
       edit(() => toggleSolid(object, input.checked));
       input.checked = data.solid;
+      paintElastic();
     };
+  }
+  function paintElastic() {
+    if (!elastic) return;
+    elastic.checked = data.elastic;
+    elastic.disabled = !data.solid || data.negative;
+  }
+  if (elastic) {
+    elastic.onchange = event => {
+      edit(() => toggleElastic(object, event.target.checked), 'Elastikliği değiştir');
+      paintElastic();
+    };
+    paintElastic();
   }
   if ($('camera-collisions')) {
     const check = $('camera-collisions');
@@ -301,6 +329,9 @@ export function bindSettings(
     };
   }
   if ($('object-finish')) {
+    const index = selectedParts.get(object) ?? 0;
+    const part = data.finish === 'parts' ? data.parts?.[index] : undefined;
+    const surface = part ?? data;
     const updateSurface = () => {
       if (data.type === 'mesh') updateMeshSurface(object);
       else applyTile(object.material, data);
@@ -310,43 +341,62 @@ export function bindSettings(
       else setTileOptions(object.material, data);
     };
     const repaintTileFields = () => {
-      $('tile-settings').hidden = data.finish !== 'tile';
-      $('custom-color-settings').hidden = data.finish === 'parts' || (data.finish === 'tile' && data.tileColorMode === 'default');
+      $('tile-settings').hidden = surface.finish !== 'tile';
+      $('custom-color-settings').hidden = surface.finish === 'tile' && surface.tileColorMode !== 'custom';
     };
     $('object-finish').value = data.finish;
-    $('object-tile').value = data.tile;
-    $('tile-color-mode').value = data.tileColorMode;
-    $('tile-fit').checked = data.tileFit;
+    $('object-tile').value = surface.tile ?? 'checker';
+    $('tile-color-mode').value = surface.tileColorMode ?? 'default';
+    $('tile-fit').checked = surface.tileFit ?? false;
+    if ($('mesh-part-settings')) $('mesh-part-settings').hidden = !part;
+    if (part) {
+      $('mesh-part').replaceChildren(...data.parts.map((_, slot) => new Option('Parça ' + (slot + 1), slot)));
+      $('mesh-part').value = index;
+      $('mesh-part').onchange = event => {
+        selectedParts.set(object, Number(event.target.value));
+        refreshInspector();
+      };
+      $('part-finish').value = part.finish === 'tile' ? 'tile' : 'color';
+      $('part-finish').onchange = event => edit(() => {
+        part.finish = event.target.value;
+        part.tile ??= 'checker';
+        part.tileScale ??= 1;
+        part.tileColorMode ??= 'default';
+        repaintTileFields();
+        updateSurface();
+      }, 'Parça yüzeyini değiştir');
+    }
     repaintTileFields();
     $('object-finish').onchange = (event) =>
       edit(() => {
         data.finish = event.target.value;
-        repaintTileFields();
         updateSurface();
+        refreshInspector();
       });
     $('object-tile').onchange = (event) =>
       edit(() => {
-        data.tile = event.target.value;
+        surface.tile = event.target.value;
         updateSurface();
       });
     $('tile-color-mode').onchange = event => edit(() => {
-      data.tileColorMode = event.target.value;
+      surface.tileColorMode = event.target.value;
       updateOptions();
       repaintTileFields();
     }, 'Karo rengini değiştir');
     $('tile-fit').onchange = event => edit(() => {
-      data.tileFit = event.target.checked;
+      surface.tileFit = event.target.checked;
       updateOptions();
       repaintTileFields();
     }, 'Karo sığdırmayı değiştir');
     number(
       'object-tile-scale',
-      () => Number((data.tileScale * 100).toFixed(8)),
+      () => Number(((surface.tileScale ?? 1) * 100).toFixed(8)),
       0.1,
       2000,
       (value) => {
-        data.tileScale = value / 100;
-        if (data.type === 'mesh') for (const material of object.material) setTileSize(material, data.tileScale);
+        surface.tileScale = value / 100;
+        if (part) setTileSize(object.material[index], surface.tileScale);
+        else if (data.type === 'mesh') for (const material of object.material) setTileSize(material, data.tileScale);
         else setTileSize(object.material, data.tileScale);
       }
     );
@@ -423,16 +473,21 @@ export function bindSettings(
       return rebuild();
     });
   }
-  if ($('object-color'))
-    bindColor(panel, object.isLight ? object.color : object.surfaceColor ?? object.material.color, {
+  if ($('object-color')) {
+    const index = selectedParts.get(object) ?? 0;
+    const part = data.finish === 'parts' ? data.parts?.[index] : undefined;
+    const color = part ? object.material[index].color : object.isLight ? object.color : object.surfaceColor ?? object.material.color;
+    bindColor(panel, color, {
       edit,
       pick,
       status,
       changed: object.surfaceColor && (() => {
-        data.surfaceColor = '#' + object.surfaceColor.getHexString();
+        if (part) part.color = '#' + color.getHexString();
+        else data.surfaceColor = '#' + color.getHexString();
         updateMeshSurface(object);
       })
     });
+  }
   if (object.isLight)
     number(
       'light-power',

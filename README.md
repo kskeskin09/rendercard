@@ -44,6 +44,7 @@ Kaydedilmemiş proje değişiklikleri varsa Windows uygulaması çıkarken onay 
 - Tek cismi boyutlandırma tutamacı karşı kenarı sabit tutar. Sürüklerken **Shift** iki kenarı eşit miktarda değiştirir. Sayısal **Boyut** alanı seçili merkez noktasını sabit tutar. Çoklu seçimde **Shift** ile sürüklemek cisimleri ortak orta noktaya göre taşır, döndürür veya boyutlandırır. Zincir, sayısal boyutların X, Y ve Z oranını korur.
 - **Yerleşim** bölümünde üç eksenin merkez noktasını ayrı seçin. Merkez seçimi modelin sahnedeki yerini korur ve konum alanları seçilen yeni noktayı gösterir. **Hizala** komutları ilk seçilen nesnenin merkezini referans alır. Bu nesne listede daha koyu işaretlenir. **Sahne** listesi kapalı başlar ve açılana kadar yalnızca seçili nesneleri gösterir.
 - **Zemine bitiştir**, en uç kenarı veya seçili merkez noktasını zemine taşır. **Katılık**, taşıma sırasında yüzeyde durdurur. Açarken bir çakışma varsa nesnelerin adlarını gösterir ve sahneyi yerinde bırakır.
+- Katı ve pozitif cisimlerde **Elastiklik**, kesiti sığan bir nesnenin çevresinde geçici bir boşluk açar. Dış sınırlar ve boyut değerleri sabit kalır. Giren nesne çekilince yüzey eski haline gelir. Sığmayan nesnelerde katılık çalışmaya devam eder. Sekme ayrı bir animasyon ayarıdır.
 - **Yakalama** menüsünde aynı anda bir mod kullanılır. **Tam konumlar** taşıma ve boyutlandırmayı seçilen aralığın katlarına yakalar. Oran kilidinde düzenlenen eksen yakalanır ve diğer boyutlar ona göre orantılanır. Varsayılan hassasiyet 1 sahne birimidir. **Yüzeye yakala** yakın temas noktasını arar ve sürüklemede uygun kenarları hizalar.
 - Kutudaki **Kenar yuvarlama** X, Y ve Z eksenlerine paralel kenarlarda ayrı ayarlanır. Örneğin sadece Y değerini artırmak, üst ve alt yüzeyi düz bırakıp düşey kenarları yuvarlar. Küpte bütün eksenleri %50 yapmak küre verir. İnce ve eşit X–Z boyutlu bir kutuda üstten görünüş çember olur. Çim ve asfalt dahil tüm desenler %100 ölçekte bir zemin karesi boyutundadır. %200, karonun kenarını iki katına çıkarır.
 - Nesne listesinin solundaki göz, nesneyi düzenleme önizlemesinde gösterir veya gizler. **Opaklık** hem önizlemeyi hem dışa aktarılan görüntüyü etkiler. %0 tamamen saydam, %100 opaktır. Gizli ve saydam katı nesneler temas kontrolünde kalır. Rengi paletten seçebilir veya HEX, RGB ve HSL biçimlerinde girebilirsiniz.
@@ -51,6 +52,13 @@ Kaydedilmemiş proje değişiklikleri varsa Windows uygulaması çıkarken onay 
 - **Yerleşim → Nesne işlemi → Negatif · Delik aç** ile bir kesici oluşturun. Negatif nesne pozitiflerle kesiştiğinde kesişim hacmini çıkarır. Tek başına normal görünür. **Birleştir**, kesici nesneleri tüketir ve kalan geometriyi pozitif tek bir ağ olarak kaydeder. Geometrinin tamamı kesildiyse sahnede nesne kalmaz. Birleşik ağa **Görünüm** bölümünden tek renk ya da karo verebilir veya parça renklerini koruyabilirsiniz.
 - **Işık** ile bağımsız bir noktasal ışık yerleştirin. **Varsayılan ışık** sahneyi hazır ışıklarla aydınlatır. Bir cismin **Işık yay** seçeneği, cismin yüzeyini parlatır ve merkezini takip eden bir ışık ekler. **Sis** menüsünden paletle renk seçebilir, başlangıç ve tam sis mesafesini belirleyebilirsiniz.
 - **Gökyüzü** menüsünde arka planı düz renge, **Açık gökyüzü** veya **Yıldızlar** dokusuna ayarlayın. Varsayılan ayar sis rengini izler. Bu iki doku nesne karolarında da kullanılabilir.
+- Birleşik ağda **Görünüm → Yüzey** ile tüm ağ için renk veya tile seçin. **Parça yüzeyleri** ile birleşimde saklanan parçaları ayrı ayrı düzenleyin.
+
+## İskelet ve doku köprüsü
+
+Nesnenin **İskelet → İskelet bağı** ayarı seçili merkezde bir nokta oluşturur. Sahnedeki kemik simgeli aracı açıp iki noktaya sırayla tıklayın veya Özellikler panelinde **Kemik oluştur** düğmesini kullanın. Kemiğe sağ tıklayıp **Doku düzeltme**yi açabilir ve yüzey genişliğini değiştirebilirsiniz. Varsayılan yüzey iki uçtan alınan malzemeleri karıştırır. Özel renk veya tile seçilebilir.
+
+Nesneler hareket ettikçe kemik onları takip eder ve aradaki görünür boşluk için doku köprüsü yeniden hesaplanır. İskelet işaretleri düzenleme görünümünde, doku köprüsü de PNG ve video renderında görünür. Bağlantılar proje dosyasında saklanır.
 
 ## Animasyon sahneleri
 

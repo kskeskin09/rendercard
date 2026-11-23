@@ -44,6 +44,8 @@ import { orbitPosition, orderedOrbits } from './orbit-motion.js';
 import { stepTimelineZoom, timelineWindow } from './timeline-window.js';
 import { applyTextEdit, isTextGroup, planLetterEntrance, planTextEdit, textGroupInfo } from './text-editing.js';
 import { applyKeyTiming, planKeyTiming } from './key-timing.js';
+import { boneDefaults, rigLinks } from './rig.js';
+import { tiles } from './tiles.js';
 import {
   axes,
   axisHeading,
@@ -97,6 +99,9 @@ let paintedInspector;
 let previewCamera = false;
 let cameraOverride;
 let measuring = false;
+let rigMode = false;
+let firstJoint;
+let activeBone;
 let freeViewLabel;
 let sceneName = 'Yeni sahne';
 let sceneExpanded = false;
@@ -163,6 +168,8 @@ function replaceScene(state) {
   const freeCameraId = freeViewLabel?.userData.cameraId;
   selectedTimelineKeys.clear();
   cancelKeyMove();
+  firstJoint = activeBone = undefined;
+  view?.setRigMode(rigMode);
   [...root.children].forEach(disposeObject);
   project.objects.forEach((object) => root.add(object));
   freeViewLabel = freeCameraId ? getCamera(freeCameraId) : undefined;
@@ -1326,7 +1333,7 @@ function paintList() {
     if (object.isMesh) triangles += object.geometry.index.count / 3;
     const collapsed = collapsedGroups.has(object.userData.objectId);
     const childrenHidden = hiddenByGroup || collapsed;
-    if (sceneExpanded ? hiddenByGroup : !selected.has(object)) {
+    if ((!sceneExpanded || hiddenByGroup) && !selected.has(object)) {
       object.children.forEach(child => rowFor(child, depth + 1, childrenHidden));
       return;
     }
@@ -1644,12 +1651,23 @@ function paintInspector() {
         warnOverlap(intersections);
         return;
       }
+      const wasElastic = solid.userData.elastic;
       solid.userData.solid = value;
+      if (!value) solid.userData.elastic = false;
+      if (!value && wasElastic && settleObject(solid) === false) return false;
       paintList();
       status(value ? 'Katılık açıldı.' : 'Katılık kapatıldı.');
       refreshTransform();
-    }
+    },
+    toggleElastic: (object, value) => {
+      if (!object.userData.solid || object.userData.negative) return;
+      object.userData.elastic = value;
+      if (!value && settleObject(object) === false) return false;
+      status(value ? 'Elastiklik açıldı.' : 'Elastiklik kapatıldı.');
+    },
+    refreshInspector: paintInspector
   });
+  bindSkeletonInspector(object);
   refreshTransform();
   scroller.scrollTop = inspectorPositions.get(object) ?? 0;
 }
@@ -1823,6 +1841,8 @@ presets = installPresets({
             if (!child.userData.followTarget) child.userData.followOffset = null;
           }
           child.userData.orbit.target = idMap.get(child.userData.orbit.target) ?? null;
+          child.userData.bones = child.userData.bones.flatMap(bone =>
+            idMap.has(bone.target) ? [{ ...bone, target: idMap.get(bone.target) }] : []);
         });
         root.add(object);
       }
@@ -2016,7 +2036,9 @@ $('text-entrance-form').onsubmit = event => {
 };
 
 function clearObjectTargets(removedObjects) {
+  if (removedObjects.has(firstJoint?.userData.objectId)) setRigMode(rigMode);
   forObjects(object => {
+    object.userData.bones = object.userData.bones.filter(bone => !removedObjects.has(bone.target));
     if (removedObjects.has(object.userData.followTarget)) {
       object.userData.followTarget = null;
       object.userData.followOffset = null;
@@ -2024,6 +2046,161 @@ function clearObjectTargets(removedObjects) {
     if (removedObjects.has(object.userData.orbit.target)) object.userData.orbit.target = null;
   });
 }
+
+function setRigMode(value, joint) {
+  rigMode = value;
+  firstJoint = joint;
+  $('skeleton-mode').setAttribute('aria-pressed', String(value));
+  view?.setRigMode(value, joint);
+}
+
+$('skeleton-mode').onclick = () => {
+  setPlaying(false);
+  if (rigMode) {
+    setRigMode(false);
+    return;
+  }
+  setMeasure(false);
+  setRigMode(true);
+  status('İki iskelet noktasına sırayla tıkla. Doku ayarları için kemiğe sağ tıkla.');
+};
+
+function connectBone(source, target) {
+  if (!source?.userData.skeletonJoint || !target?.userData.skeletonJoint || source === target) return;
+  if (getObjectById(source.userData.objectId) !== source || getObjectById(target.userData.objectId) !== target) return;
+  const { links } = rigLinks(root);
+  if (links.some(link => (link.source === source && link.target === target) ||
+      (link.target === source && link.source === target))) {
+    status('Bu noktalar zaten bağlı.');
+    return;
+  }
+  edit(() => {
+    source.userData.bones.push({ ...boneDefaults, target: target.userData.objectId });
+    paintInspector();
+    status(source.name + ' ile ' + target.name + ' bağlandı.');
+  }, 'Kemik oluştur');
+}
+
+function bindSkeletonInspector(object) {
+  const joint = $('skeleton-joint');
+  joint.checked = object.userData.skeletonJoint;
+  joint.onchange = () => edit(() => {
+    const enabled = joint.checked;
+    object.userData.skeletonJoint = enabled;
+    if (!enabled) {
+      object.userData.bones = [];
+      forObjects(other => {
+        other.userData.bones = other.userData.bones.filter(bone => bone.target !== object.userData.objectId);
+      });
+      if (firstJoint === object) setRigMode(rigMode);
+    }
+    paintInspector();
+    status(enabled ? 'Merkeze iskelet bağı eklendi.' : 'İskelet bağı kaldırıldı.');
+  }, 'İskelet bağını değiştir');
+  if (!joint.checked) return;
+  const { joints, links } = rigLinks(root);
+  const connected = links.filter(link => link.source === object || link.target === object);
+  const otherEnd = link => link.source === object ? link.target : link.source;
+  const already = new Set(connected.map(otherEnd));
+  const targets = joints.filter(item => item !== object && !already.has(item));
+  $('skeleton-targets').hidden = !targets.length;
+  $('skeleton-target').replaceChildren(...targets.map(item => new Option(item.name, item.userData.objectId)));
+  $('connect-bone').onclick = () => connectBone(object, getObjectById($('skeleton-target').value));
+  $('skeleton-links').hidden = !connected.length;
+  $('skeleton-link').replaceChildren(...connected.map((link, index) => new Option(otherEnd(link).name, index)));
+  $('open-bone-settings').onclick = () => showBoneSettings(connected[Number($('skeleton-link').value)]);
+}
+
+function receiveRigPick(event, hit) {
+  if (event.button === 2 && hit.link) {
+    activeBone = hit.link;
+    $('object-menu').hidden = true;
+    const menu = $('bone-menu');
+    $('bone-toggle-skin').textContent = activeBone.bone.skin ? 'Doku düzeltmeyi kapat' : 'Doku düzeltmeyi aç';
+    menu.hidden = false;
+    menu.style.left = Math.max(0, Math.min(event.clientX, innerWidth - menu.offsetWidth - 5)) + 'px';
+    menu.style.top = Math.max(0, Math.min(event.clientY, innerHeight - menu.offsetHeight - 5)) + 'px';
+    $('bone-toggle-skin').focus();
+    return true;
+  }
+  if (!hit.joint) return false;
+  if (!firstJoint || firstJoint === hit.joint) {
+    select(hit.joint);
+    setRigMode(true, hit.joint);
+    status('Bağlamak için ikinci iskelet noktasına tıkla.');
+  } else {
+    connectBone(firstJoint, hit.joint);
+    setRigMode(true);
+  }
+  return true;
+}
+
+const boneDialog = $('bone-dialog');
+$('bone-tile').replaceChildren(...Object.entries(tiles).map(([value, name]) => new Option(name, value)));
+function paintBoneFields() {
+  const finish = $('bone-finish').value;
+  $('bone-skin-fields').hidden = !$('bone-skin').checked;
+  $('bone-color-field').hidden = finish !== 'color';
+  $('bone-tile-field').hidden = finish !== 'tile';
+}
+function showBoneSettings(link) {
+  if (!link) return;
+  activeBone = link;
+  $('bone-menu').hidden = true;
+  $('bone-name').textContent = link.source.name + ' ↔ ' + link.target.name;
+  const { skin, finish, color, tile, ratio, tileScale } = link.bone;
+  $('bone-skin').checked = skin;
+  $('bone-finish').value = finish;
+  $('bone-color').value = color;
+  $('bone-ratio').value = ratio;
+  $('bone-tile').value = tile;
+  $('bone-tile-scale').value = tileScale * 100;
+  paintBoneFields();
+  boneDialog.showModal();
+}
+$('bone-skin').onchange = $('bone-finish').onchange = paintBoneFields;
+$('bone-settings').onclick = () => showBoneSettings(activeBone);
+$('close-bone-dialog').onclick = () => boneDialog.close();
+$('bone-form').onsubmit = event => {
+  event.preventDefault();
+  boneDialog.close();
+  if (!activeBone) return;
+  edit(() => {
+    Object.assign(activeBone.bone, {
+      skin: $('bone-skin').checked, finish: $('bone-finish').value,
+      color: $('bone-color').value, tile: $('bone-tile').value,
+      ratio: $('bone-ratio').valueAsNumber, tileScale: $('bone-tile-scale').valueAsNumber / 100
+    });
+    status('Kemik doku ayarları güncellendi.');
+  }, 'Kemik dokusunu değiştir');
+};
+$('bone-toggle-skin').onclick = () => {
+  $('bone-menu').hidden = true;
+  if (!activeBone) return;
+  edit(() => {
+    activeBone.bone.skin = !activeBone.bone.skin;
+    status(activeBone.bone.skin ? 'Doku düzeltme açıldı.' : 'Doku düzeltme kapatıldı.');
+  }, 'Doku düzeltmeyi değiştir');
+};
+$('delete-bone').onclick = () => {
+  $('bone-menu').hidden = true;
+  if (!activeBone) return;
+  edit(() => {
+    const { source, bone } = activeBone;
+    source.userData.bones = source.userData.bones.filter(item => item !== bone);
+    activeBone = undefined;
+    paintInspector();
+    status('Kemik kaldırıldı.');
+  }, 'Kemiği kaldır');
+};
+document.addEventListener('pointerdown', event => {
+  if (!event.target.closest('#bone-menu')) $('bone-menu').hidden = true;
+});
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  $('bone-menu').hidden = true;
+  if (firstJoint) setRigMode(rigMode);
+});
 
 function deleteSelection() {
   if (!selected.size) return;
@@ -2087,6 +2264,8 @@ function duplicateObjects(objects = independentSelection()) {
         if (target) child.userData.followTarget = target;
         const center = ids.get(child.userData.orbit.target);
         if (center) child.userData.orbit.target = center;
+        child.userData.bones = child.userData.bones.flatMap(bone =>
+          ids.has(bone.target) ? [{ ...bone, target: ids.get(bone.target) }] : []);
       });
       objects[index].parent.add(copy);
       const from = copy.position.clone();
@@ -2188,28 +2367,36 @@ $('group').onclick = () => {
 };
 function mergeSelection(objects) {
   edit(() => {
+    const mergedObjects = new Set(objects);
+    const mergedIds = new Set(objects.map(object => object.userData.objectId));
+    const incident = rigLinks(root).links.filter(({ source, target }) => mergedObjects.has(source) || mergedObjects.has(target));
     const merged = joinMeshes(objects);
     if (!merged) {
-      const erased = new Set(objects.map(object => object.userData.objectId));
-      forObjects(object => {
-        if (erased.has(object.userData.followTarget)) {
-          object.userData.followTarget = null;
-          object.userData.followOffset = null;
-        }
-        if (erased.has(object.userData.orbit.target)) object.userData.orbit.target = null;
-      });
+      clearObjectTargets(mergedIds);
       select();
       status('Negatif hacim seçili cisimleri tamamen çıkardı.');
       return;
     }
-    const mergedIds = new Set(objects.map(object => object.userData.objectId));
+    merged.userData.skeletonJoint = objects.some(object => object.userData.skeletonJoint);
     forObjects(object => {
+      object.userData.bones = object.userData.bones.filter(bone => !mergedIds.has(bone.target));
       if (mergedIds.has(object.userData.followTarget)) {
         object.userData.followTarget = merged.userData.objectId;
         captureFollowOffset(object, merged);
       }
       if (mergedIds.has(object.userData.orbit.target)) object.userData.orbit.target = merged.userData.objectId;
     });
+    const connected = new Set();
+    for (const { source, target, bone } of incident) {
+      if (mergedObjects.has(source) && mergedObjects.has(target)) continue;
+      const newSource = mergedObjects.has(source) ? merged : source;
+      const newTarget = mergedObjects.has(target) ? merged : target;
+      const other = newSource === merged ? newTarget : newSource;
+      if (connected.has(other)) continue;
+      connected.add(other);
+      newSource.userData.bones.push({ ...bone, target: newTarget.userData.objectId });
+    }
+    if (mergedObjects.has(firstJoint)) setRigMode(rigMode);
     select(merged);
     setWireframe(wireframe);
     if (merged.userData.mergeMidpoint && !hasVolumeAtOrigin(merged.geometry)) {
@@ -2273,6 +2460,7 @@ $('ungroup').onclick = () => {
   setPlaying(false);
   edit(() => {
     const children = dissolveGroup(group);
+    clearObjectTargets(new Set([group.userData.objectId]));
     selected.clear();
     children.forEach((object) => selected.add(object));
     refresh();
@@ -2382,7 +2570,7 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   if ($('render-settings-dialog').open || $('model-dialog').open || joinDialog.open ||
-      textDialog.open || textEntranceDialog.open || $('timeline-spacing-dialog').open) return;
+      textDialog.open || textEntranceDialog.open || $('timeline-spacing-dialog').open || boneDialog.open) return;
   if ($('render-preview').open) {
     if (key === ' ' && document.activeElement?.tagName !== 'BUTTON') {
       event.preventDefault();
@@ -2552,6 +2740,7 @@ function openProject(content, handle) {
       if (measuring) setMeasure(false);
       [...root.children].forEach(disposeObject);
       project.objects.forEach((object) => root.add(object));
+      setRigMode(false);
       duration = project.duration;
       animations = project.animations;
       atmosphere = project.atmosphere;
@@ -2926,6 +3115,7 @@ for (const input of all('[name="snap-mode"]')) {
 populate();
 try {
   view = createViewport($('viewport'), root, {
+    rigPick: receiveRigPick,
     select,
     measurementSettings: () => ({ step: dimensionStep(), surface: $('snap-surface').checked }),
     measured: result => status(result

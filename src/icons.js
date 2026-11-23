@@ -24,6 +24,7 @@ const icons = {
   video:
     '<rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  bone: '<path d="M7 10 14 3m-4 14 7-7M7 10a3 3 0 1 0-3 5 3 3 0 1 0 5 3l1-1m4-14a3 3 0 0 1 5 2 3 3 0 0 1-2 5"/>',
   letter: '<path d="M4 6h16M12 6v14M9 20h6M4 6v3m16-3v3"/>',
   box: '<path d="m12 2 9 5v10l-9 5-9-5V7l9-5Zm0 10 9-5m-9 5L3 7m9 5v10"/>',
   prism: '<path d="m3 16 6-11 6 11H3Zm6-11 5-2 7 11-6 2m6-2v3l-6 4H3v-5m12 0v5"/>',

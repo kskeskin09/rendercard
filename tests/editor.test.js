@@ -1000,3 +1000,65 @@ test('timing changes are atomic and allow simultaneous keys on separate tracks',
   assert.equal(c.frame, 40);
   assert.deepEqual(a.scale, [2,1,1]);
 });
+
+test('a solid elastic mesh admits a narrow shaft and preserves its outside bounds', async () => {
+  const { sceneCuts } = await import('../src/boolean-cuts.js');
+  const root = new Group();
+  const sponge = makeObject('box', 'Sünger', '#eeee99', 24, { solid: true, elastic: true });
+  sponge.scale.set(2, 2, 2);
+  const shaft = makeObject('box');
+  shaft.scale.set(3, 0.35, 0.35);
+  shaft.position.set(1.4, 0, 0);
+  root.add(sponge, shaft);
+  const from = new Vector3(3.5, 0, 0);
+  assert.equal(sweep(root, shaft, from), undefined);
+  assert.equal(overlaps(root, shaft).length, 0);
+  const { cuts, cutters } = sceneCuts(root);
+  assert(cuts.has(sponge));
+  assert(!cutters.has(shaft));
+  const cut = cuts.get(sponge);
+  cut.computeBoundingBox();
+  assert.deepEqual(cut.boundingBox.getSize(new Vector3()).toArray(), [1, 1, 1]);
+  assert.deepEqual(sponge.scale.toArray(), [2, 2, 2]);
+  assert.equal(decodeProject(encodeProject(root, 120)).objects[0].userData.elastic, true);
+
+  shaft.position.copy(from);
+  assert.equal(sceneCuts(root).cuts.size, 0);
+  shaft.scale.set(3, 2.2, 0.35);
+  shaft.position.x = 0.8;
+  assert.equal(sweep(root, shaft, from), sponge);
+  assert(shaft.position.x >= 2.49);
+  assert.equal(sceneCuts(root).cuts.size, 0);
+});
+
+test('bone bridge follows mesh surfaces, blends their materials and disappears inside an endpoint', async () => {
+  const { boneDefaults, boneMaterial, boneSurface, rigLinks } = await import('../src/rig.js');
+  const root = new Group();
+  const larger = makeObject('box', 'Büyük', '#ff3030', 24, { skeletonJoint: true });
+  larger.scale.setScalar(2);
+  const smaller = makeObject('box', 'Küçük', '#3070ff', 24, { skeletonJoint: true });
+  smaller.scale.setScalar(.5);
+  smaller.position.x = 3;
+  root.add(larger, smaller);
+  root.updateMatrixWorld(true);
+  const bone = { ...boneDefaults, skin: true, target: smaller.userData.objectId };
+  larger.userData.bones.push(bone);
+  const broad = boneSurface(larger, smaller, 100);
+  const slender = boneSurface(larger, smaller, 50);
+  broad.geometry.computeBoundingBox();
+  slender.geometry.computeBoundingBox();
+  assert(broad.geometry.boundingBox.getSize(new Vector3()).y > slender.geometry.boundingBox.getSize(new Vector3()).y);
+  close(broad.geometry.boundingBox.min.x, 1);
+  close(broad.geometry.boundingBox.max.x, 2.75);
+  assert.deepEqual(broad.materials, [larger.material, smaller.material]);
+  const blend = boneMaterial(bone, broad);
+  const colors = blend.map.image.data;
+  assert(colors[0] > colors[2]);
+  assert(colors.at(-2) > colors.at(-4));
+  smaller.position.x = 0.4;
+  root.updateMatrixWorld(true);
+  assert.equal(boneSurface(larger, smaller, 100), null);
+  const reloaded = new Group();
+  reloaded.add(...decodeProject(encodeProject(root, 120)).objects);
+  assert.equal(rigLinks(reloaded).links[0].bone.skin, true);
+});

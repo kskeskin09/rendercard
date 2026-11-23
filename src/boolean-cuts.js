@@ -1,8 +1,10 @@
 import { Box3, Matrix4, Vector3 } from 'three';
 import { Brush, Evaluator, SUBTRACTION, computeMeshVolume } from 'three-bvh-csg';
+import { elasticFits } from './elastic.js';
 
 const evaluator = new Evaluator();
 const results = new WeakMap();
+const elasticResults = new WeakMap();
 evaluator.useCDTClipping = true;
 evaluator.removeUnusedMaterials = false;
 
@@ -13,11 +15,16 @@ function brushFor(geometry, material, matrix) {
 }
 
 export function releaseCut(object) {
-  results.get(object)?.geometry?.dispose();
-  results.delete(object);
+  releaseCachedCut(results, object);
+  releaseCachedCut(elasticResults, object);
 }
 
-function cutMesh(object, candidates) {
+function releaseCachedCut(cache, object) {
+  cache.get(object)?.geometry?.dispose();
+  cache.delete(object);
+}
+
+function cutMesh(object, candidates, cache) {
   const inverse = object.matrixWorld.clone().invert();
   const sources = candidates.map(({ mesh }) => {
     const matrix = new Matrix4().multiplyMatrices(inverse, mesh.matrixWorld);
@@ -40,9 +47,9 @@ function cutMesh(object, candidates) {
   const signature = [...geometryVersion(object), ...sources.flatMap(({ mesh, matrix }) => [
     ...geometryVersion(mesh), ...matrix.elements
   ])].join(':');
-  const previous = results.get(object);
+  const previous = cache.get(object);
   if (previous?.signature === signature) return previous;
-  releaseCut(object);
+  releaseCachedCut(cache, object);
 
   const materials = object.material;
   let geometry = object.geometry;
@@ -76,11 +83,11 @@ function cutMesh(object, candidates) {
     }
   }
   const result = { signature, geometry: used.length ? geometry : undefined, used };
-  results.set(object, result);
+  cache.set(object, result);
   return result;
 }
 
-export function sceneCuts(root, selection) {
+export function sceneCuts(root, selection, includeElastic = !selection) {
   const cuts = new Map();
   const cutters = new Set();
   const meshObjects = selection ?? [];
@@ -92,8 +99,11 @@ export function sceneCuts(root, selection) {
       meshObjects.push(mesh);
     });
   }
-  if (!meshObjects.some(mesh => mesh.userData.negative)) {
-    meshObjects.forEach(releaseCut);
+  if (!meshObjects.some(mesh => mesh.userData.negative || (includeElastic && mesh.userData.elastic))) {
+    for (const mesh of meshObjects) {
+      releaseCachedCut(results, mesh);
+      if (includeElastic) releaseCachedCut(elasticResults, mesh);
+    }
     return { cuts, cutters };
   }
   root.updateWorldMatrix(true, true);
@@ -102,19 +112,26 @@ export function sceneCuts(root, selection) {
     return { mesh, bounds: mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld) };
   });
   const negatives = boxes.filter(({ mesh }) => mesh.userData.negative);
+  const positives = boxes.filter(({ mesh }) => !mesh.userData.negative);
   const intersection = new Box3();
   for (const { mesh, bounds } of boxes) {
-    const candidates = mesh.userData.negative ? [] : negatives.filter(negative => {
-      intersection.copy(bounds).intersect(negative.bounds);
+    if (includeElastic && !mesh.userData.elastic) releaseCachedCut(elasticResults, mesh);
+    const intruders = includeElastic && mesh.userData.elastic
+      ? positives.filter(item => item.mesh !== mesh && item.bounds.intersectsBox(bounds) &&
+          elasticFits(mesh, item.mesh) && (!item.mesh.userData.elastic || !elasticFits(item.mesh, mesh)))
+      : [];
+    const cache = includeElastic && mesh.userData.elastic ? elasticResults : results;
+    const candidates = mesh.userData.negative ? [] : [...negatives, ...intruders].filter(other => {
+      intersection.copy(bounds).intersect(other.bounds);
       return ['x', 'y', 'z'].every(axis => intersection.max[axis] - intersection.min[axis] > 1e-7);
     });
     if (!candidates.length) {
-      releaseCut(mesh);
+      releaseCachedCut(cache, mesh);
       continue;
     }
-    const result = cutMesh(mesh, candidates);
+    const result = cutMesh(mesh, candidates, cache);
     if (result.geometry) cuts.set(mesh, result.geometry);
-    for (const cutter of result.used) cutters.add(cutter);
+    for (const cutter of result.used) if (cutter.userData.negative) cutters.add(cutter);
   }
   return { cuts, cutters };
 }

@@ -69,7 +69,7 @@ export const types = {
   camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 15;
+export const projectVersion = 16;
 export const shapeSides = [3, 4, 5, 6, 8, 16, 32, 64];
 export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid'].includes(type);
 const channels = ['position', 'rotation', 'scale'];
@@ -78,6 +78,9 @@ const settingsDefaults = {
   radius: 0,
   segments: 4,
   solid: false,
+  elastic: false,
+  skeletonJoint: false,
+  bones: [],
   negative: false,
   sides: null,
   polygonRoundness: 0,
@@ -301,6 +304,7 @@ export function makeObject(
   if (object.isCamera && !settings.cameraId)
     object.userData.cameraId = crypto.randomUUID();
   object.userData.tracks = {};
+  if (!object.isMesh || !settings.solid || settings.negative) object.userData.elastic = false;
   if (object.isCamera && !object.userData.affectsSolids) object.userData.solid = false;
   object.visible = !settings.hidden;
   updateOpacity(object);
@@ -393,6 +397,7 @@ function makeJoinedMesh(parts, name = 'Birleşik ağ', data) {
   mesh.name = name;
   mesh.userData = { type: 'mesh', keys: [], tracks: {}, parts, ...settings };
   mesh.userData.objectId ??= crypto.randomUUID();
+  if (!settings.solid || settings.negative) mesh.userData.elastic = false;
   mesh.surfaceColor = new Color(settings.surfaceColor);
   if (settings.finish !== 'parts') updateMeshSurface(mesh);
   mesh.visible = !settings.hidden;
@@ -453,6 +458,7 @@ export function joinMeshes(objects) {
     });
   const merged = makeJoinedMesh(parts, undefined, { hidden, mergeMidpoint: !mixed });
   merged.userData.solid = objects.some(object => (!mixed || !object.userData.negative) && object.userData.solid);
+  merged.userData.elastic = merged.userData.solid && objects.some(object => object.userData.elastic);
   merged.position.copy(center);
   objects.forEach(disposeObject);
   parent.add(merged);
@@ -636,6 +642,8 @@ export function decodeProject(project) {
         data.segments >= 1 &&
         data.segments <= 12)) &&
     (data.solid == null || typeof data.solid === 'boolean') &&
+    (data.elastic == null || typeof data.elastic === 'boolean') &&
+    (data.skeletonJoint == null || typeof data.skeletonJoint === 'boolean') &&
     (data.reactsToGround == null || typeof data.reactsToGround === 'boolean') &&
     (data.linkedSize == null || typeof data.linkedSize === 'boolean') &&
     (data.affectsSolids == null || typeof data.affectsSolids === 'boolean') &&
@@ -728,6 +736,10 @@ export function decodeProject(project) {
   const cameraIds = new Set();
   const objectIds = new Set();
   const validObjectId = id => typeof id === 'string' && /^[a-z0-9-]{1,64}$/i.test(id);
+  const validBone = bone => bone && validObjectId(bone.target) && typeof bone.skin === 'boolean' &&
+    ['blend', 'color', 'tile'].includes(bone.finish) && /^#[0-9a-f]{6}$/i.test(bone.color) &&
+    Object.hasOwn(tiles, bone.tile) && Number.isFinite(bone.ratio) && bone.ratio >= 1 && bone.ratio <= 100 &&
+    Number.isFinite(bone.tileScale) && bone.tileScale >= 0.001 && bone.tileScale <= 20;
   function validate(data, depth) {
     if (
       !data ||
@@ -736,6 +748,7 @@ export function decodeProject(project) {
       typeof data.name !== 'string' ||
       !validPose(data) ||
       !validSettings(data) ||
+      (data.bones != null && (!Array.isArray(data.bones) || !data.bones.every(validBone))) ||
       (data.objectId != null && (!validObjectId(data.objectId) || objectIds.has(data.objectId))) ||
       (data.followTarget != null && !validObjectId(data.followTarget)) ||
       !validKeys(data.keys) ||
@@ -804,7 +817,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, projectVersion].includes(project?.version) ||
     (project.renderSize != null && !validRenderSize(project.renderSize)) ||
     (project.name != null && (typeof project.name !== 'string' || project.name.length > 80 || !project.name.trim())) ||
     !validFrame(project.duration) ||

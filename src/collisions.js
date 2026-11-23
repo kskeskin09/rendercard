@@ -5,6 +5,7 @@ import { hasKeys } from './clips.js';
 import { slideMovement } from './camera-follow.js';
 import { translateWorld } from './spatial.js';
 import { sceneCuts } from './boolean-cuts.js';
+import { elasticFits } from './elastic.js';
 
 const tolerance = 0.00001;
 const stationary = new Vector3();
@@ -155,7 +156,7 @@ function pairs(root, moving, any = false, ignored = []) {
     hasSolid ||= Boolean(object.userData.solid);
   });
   if (!ready || (!hasSolid && !any)) return [];
-  const cuts = sceneCuts(root);
+  const cuts = sceneCuts(root, undefined, false);
   const movingShapes = collect(moving, new Set(), cuts);
   const others = collect(root, excluded, cuts);
   return movingShapes.flatMap((a) =>
@@ -176,6 +177,14 @@ function contact(a, b) {
     b.rotation,
     tolerance
   );
+}
+
+function elasticContact(a, b, travel) {
+  if (!a.object.userData.elastic && !b.object.userData.elastic) return false;
+  const offset = a.elasticOffset?.clone() ?? new Vector3();
+  if (travel) offset.add(travel);
+  return elasticFits(a.object, b.object, offset.clone().negate()) !==
+    elasticFits(b.object, a.object, offset);
 }
 
 function visible(object) {
@@ -248,7 +257,7 @@ export function separate(root, moving) {
   for (let iteration = 0; iteration < 32; iteration++) {
     let deepest;
     for (const { a, b } of candidates) {
-      if (!a.bounds.intersectsBox(b.bounds)) continue;
+      if (!a.bounds.intersectsBox(b.bounds) || elasticContact(a, b)) continue;
       const hit = contact(a, b);
       if (
         hit?.distance < -tolerance &&
@@ -265,6 +274,7 @@ export function separate(root, moving) {
       shifted.add(a);
       a.position.add(offset);
       a.bounds.translate(offset);
+      (a.elasticOffset ??= new Vector3()).add(offset);
     }
   }
   if (total.lengthSq() === 0) return false;
@@ -312,6 +322,7 @@ function castPairs(candidates, travel) {
       false
     );
     if (Number.isFinite(hit?.time_of_impact) && hit.time_of_impact <= time) {
+      if (elasticContact(a, b, travel.clone().multiplyScalar(hit.time_of_impact))) continue;
       const normal = new Vector3()
         .copy(hit.normal2)
         .applyQuaternion(b.rotation)
@@ -335,7 +346,8 @@ export function staticContacts(root, moving) {
         a: {
           ...a,
           position: a.position.clone().add(offset),
-          bounds: a.bounds.clone().translate(offset)
+          bounds: a.bounds.clone().translate(offset),
+          elasticOffset: offset
         },
         b
       })),
@@ -351,7 +363,7 @@ export function followCamera(root, camera, desired) {
   return slideMovement(origin, desired, (at, travel) => {
     const offset = at.clone().sub(origin);
     return castPairs(candidates.map(({ a, b }) => ({
-      a: { ...a, position: a.position.clone().add(offset), bounds: a.bounds.clone().translate(offset) }, b
+      a: { ...a, position: a.position.clone().add(offset), bounds: a.bounds.clone().translate(offset), elasticOffset: offset }, b
     })), travel);
   });
 }
@@ -369,7 +381,7 @@ export function overlaps(root, object, any = false, staticOnly = false) {
   for (const { a, b } of pairs(root, object, any)) {
     if (
       (!staticOnly || isStatic(b.object, root)) &&
-      a.bounds.intersectsBox(b.bounds) &&
+      a.bounds.intersectsBox(b.bounds) && (any || !elasticContact(a, b)) &&
       contact(a, b)?.distance < -tolerance
     )
       objects.add(b.object);

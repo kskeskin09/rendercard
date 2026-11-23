@@ -104,6 +104,11 @@ export function applyTile(material, settings) {
     setTileSize(material, settings.tileScale);
     setTileOptions(material, settings);
     applyWorldMapping(material);
+  } else if (material.userData.tileMapping) {
+    delete material.userData.tileMapping;
+    delete material.userData.tileSize;
+    delete material.onBeforeCompile;
+    delete material.customProgramCacheKey;
   }
   material.needsUpdate = true;
 }

@@ -13,11 +13,12 @@ import { axisLabels, changeAxisView, resizeAxisView, stopOrbitMotion } from './a
 import { createMeasurement } from './measurement.js';
 import { fitRenderFrame } from './render-settings.js';
 import { skyTexture } from './sky-texture.js';
+import { createRigView } from './rig-view.js';
 
 export function createViewport(
   element,
   root,
-  { select, context, editing, change, moved, measurementSettings, measured }
+  { select, context, editing, change, moved, measurementSettings, measured, rigPick }
 ) {
   function createRenderer() {
     const display = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -58,6 +59,7 @@ export function createViewport(
   let backgroundTile;
   scene.background = backgroundColor;
   scene.add(root);
+  const rig = createRigView(scene, root);
   const camera = new THREE.PerspectiveCamera(35, 1, 0.08, 160);
   const shot = new THREE.PerspectiveCamera(35, 1, 0.08, 160);
   const outputCamera = shot.clone();
@@ -232,7 +234,7 @@ export function createViewport(
     const staged = previewShot && (shotObject || axisView);
     orbit.enabled = !axisView && !staged && !transform.dragging;
     if (axisView) axisView.controls.enabled = !staged && !transform.dragging;
-    transform.enabled = !staged && !measurement.active;
+    transform.enabled = !staged && !measurement.active && !rig.enabled;
     transform.camera = axisView?.camera ?? camera;
     for (const button of axisButtons) {
       button.setAttribute('aria-pressed', String(button.dataset.viewAxis === axisView?.axis));
@@ -489,7 +491,7 @@ export function createViewport(
     if (measurement.active && event.button === 0) return;
     if (
       event.isPrimary &&
-      (event.button === 2 || (event.button === 0 && !transform.axis))
+      (event.button === 2 || (event.button === 0 && (!transform.axis || rig.enabled)))
     )
       down = [event.clientX, event.clientY, event.button];
     else down = undefined;
@@ -517,6 +519,8 @@ export function createViewport(
       1 - (2 * (event.clientY - rect.top)) / rect.height
     );
     ray.setFromCamera(pointer, activeCamera(previewShot));
+    const rigHit = rig.pick(ray, event.button);
+    if (rigHit && rigPick?.(event, rigHit)) return;
     const light =
       previewShot && shotObject
         ? undefined
@@ -643,7 +647,7 @@ export function createViewport(
     }
     grid.visible = !clean;
     transformHelper.visible =
-      !clean && !measurement.active && (!useShot || (!shotObject && !axisView)) && Boolean(transform.object);
+      !clean && !measurement.active && !rig.enabled && (!useShot || (!shotObject && !axisView)) && Boolean(transform.object);
     outline.visible =
       !clean &&
       Boolean(
@@ -694,6 +698,8 @@ export function createViewport(
       if (pivots.visible) updateMarkers(pivots, positions);
     }
     withSceneCuts(root, () => {
+      rig.updateGuides(!clean && !useShot && !measurement.active);
+      rig.updateSkin();
       updateEmitters();
       measurement.render(renderCamera, (axisView?.controls ?? orbit).target, clean);
       const fog = scene.fog;
@@ -851,6 +857,10 @@ export function createViewport(
       orbit.update();
     },
     highlightEdges,
+    setRigMode(value, joint) {
+      rig.setMode(value, joint);
+      updateControls();
+    },
     reset() {
       closeAxisView();
       if (savedDefault) useDefaultView();
