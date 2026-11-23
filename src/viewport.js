@@ -11,21 +11,42 @@ import { withSceneCuts } from './boolean-cuts.js';
 import { updateTileBounds } from './tiles.js';
 import { axisLabels, changeAxisView, resizeAxisView } from './axis-view.js';
 import { createMeasurement } from './measurement.js';
+import { fitRenderFrame } from './render-settings.js';
 
 export function createViewport(
   element,
   root,
   { select, context, editing, change, moved, measurementSettings, measured }
 ) {
-  const renderer = new THREE.WebGLRenderer({
-    antialias: true,
-    preserveDrawingBuffer: true
+  function createRenderer() {
+    const display = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    display.shadowMap.enabled = true;
+    display.shadowMap.type = THREE.PCFShadowMap;
+    display.toneMapping = THREE.ACESFilmicToneMapping;
+    display.toneMappingExposure = 1.15;
+    return display;
+  }
+  const renderer = createRenderer();
+  let outputRenderer;
+  let outputWidth;
+  let outputHeight;
+  let frameAspect;
+  const negativeGuide = new THREE.MeshBasicMaterial({
+    transparent: true, opacity: .68, depthWrite: false, toneMapped: false
   });
+  negativeGuide.onBeforeCompile = shader => {
+    shader.vertexShader = 'varying vec3 vNegativePosition;\n' + shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      '#include <begin_vertex>\nvNegativePosition = position * vec3(length(modelMatrix[0].xyz), length(modelMatrix[1].xyz), length(modelMatrix[2].xyz));'
+    );
+    shader.fragmentShader = 'varying vec3 vNegativePosition;\n' + shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      '#include <color_fragment>\nfloat stripe = fract(dot(vNegativePosition, vec3(5.0)));\ndiffuseColor.rgb = vec3(mix(0.01, 0.95, step(0.5, stripe)));'
+    );
+  };
+  const frameGuide = element.querySelector('#frame-guide');
+  const editingSize = new THREE.Vector2();
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.15;
   renderer.domElement.setAttribute('aria-label', '3B sahne');
   renderer.domElement.tabIndex = 0;
   element.prepend(renderer.domElement);
@@ -35,6 +56,7 @@ export function createViewport(
   scene.add(root);
   const camera = new THREE.PerspectiveCamera(35, 1, 0.08, 160);
   const shot = new THREE.PerspectiveCamera(35, 1, 0.08, 160);
+  const outputCamera = shot.clone();
   let shotObject;
   let outputShot;
   let previewShot = false;
@@ -210,6 +232,7 @@ export function createViewport(
     if (!axisView) return;
     axisView.controls.dispose();
     axisView = undefined;
+    updateFrameGuide();
     measurement.invalidate();
     updateControls();
   }
@@ -503,18 +526,32 @@ export function createViewport(
     if (transform.dragging) transform.pointerUp(null);
   });
 
-  let recordingSize = false;
   function resize() {
-    if (recordingSize) return;
     const width = Math.max(1, element.clientWidth);
     const height = Math.max(1, element.clientHeight);
     renderer.domElement.style.width = width + 'px';
     renderer.domElement.style.height = height + 'px';
     renderer.setSize(width, height, false);
-    camera.aspect = width / height;
-    camera.updateProjectionMatrix();
-    resizeAxisView(axisView, camera.aspect);
+    editingSize.set(width, height);
+    updateFrameGuide();
+    resizeAxisView(axisView, width / height);
     measurement.invalidate();
+  }
+
+  function updateFrameGuide() {
+    const { x: width, y: height } = editingSize;
+    const show = Boolean(frameAspect && !axisView && width && height);
+    frameGuide.hidden = !show;
+    if (show) {
+      const fit = fitRenderFrame(width, height, frameAspect);
+      frameGuide.style.width = fit.width + 'px';
+      frameGuide.style.height = fit.height + 'px';
+      camera.setViewOffset(fit.width, fit.height, (fit.width - width) / 2, (fit.height - height) / 2, width, height);
+    } else {
+      camera.clearViewOffset();
+      camera.aspect = width / height;
+    }
+    camera.updateProjectionMatrix();
   }
   new ResizeObserver(resize).observe(element);
   resize();
@@ -528,24 +565,34 @@ export function createViewport(
   const inverseOrientation = new THREE.Quaternion();
   const point = new THREE.Vector3();
 
-  function activeCamera(useShot, output = false) {
+  function activeCamera(useShot, output = false, targetAspect = editingSize.x / editingSize.y) {
     const source = output ? outputShot : shotObject;
     if (!useShot) return axisView?.camera ?? camera;
-    if (!source && !savedDefault) return camera;
-    if (!source) {
-      shot.position.copy(savedDefault.position);
-      shot.lookAt(savedDefault.target);
+    if (!output && !source && !savedDefault) return camera;
+    const target = output ? outputCamera : shot;
+    if (source) {
+      source.getWorldPosition(target.position);
+      source.getWorldQuaternion(target.quaternion);
+    } else if (savedDefault) {
+      target.position.copy(savedDefault.position);
+      target.lookAt(savedDefault.target);
     } else {
-      source.getWorldPosition(shot.position);
-      source.getWorldQuaternion(shot.quaternion);
+      target.position.copy(camera.position);
+      target.quaternion.copy(camera.quaternion);
     }
-    shot.aspect = camera.aspect;
-    shot.updateProjectionMatrix();
-    shot.updateMatrixWorld();
-    return shot;
+    if (!output && camera.view?.enabled) {
+      const { fullWidth, fullHeight, offsetX, offsetY, width, height } = camera.view;
+      target.setViewOffset(fullWidth, fullHeight, offsetX, offsetY, width, height);
+    } else {
+      target.clearViewOffset();
+      target.aspect = targetAspect;
+      target.updateProjectionMatrix();
+    }
+    target.updateMatrixWorld();
+    return target;
   }
 
-  function render(clean = false, useShot = clean || previewShot, includeHidden = clean) {
+  function render(clean = false, useShot = clean || previewShot, includeHidden = clean, targetRenderer = renderer) {
     (axisView?.controls ?? orbit).update();
     const restore = [];
     root.traverse(object => {
@@ -560,7 +607,8 @@ export function createViewport(
       if (object.isMesh)
         for (const material of materialsOf(object)) updateTileBounds(material, object.geometry);
     });
-    const renderCamera = activeCamera(useShot, clean && includeHidden);
+    const renderCamera = activeCamera(useShot, clean && includeHidden,
+      targetRenderer === outputRenderer ? outputWidth / outputHeight : undefined);
     updateHighlightedEdges(clean);
     if (!clean && !orientation.equals(renderCamera.quaternion)) {
       orientation.copy(renderCamera.quaternion);
@@ -628,10 +676,21 @@ export function createViewport(
       updateEmitters();
       measurement.render(renderCamera, (axisView?.controls ?? orbit).target, clean);
       const fog = scene.fog;
+      const striped = [];
+      if (!clean) root.traverseVisible(object => {
+        if (!object.isMesh || !object.userData.negative) return;
+        striped.push([object, object.material, object.castShadow]);
+        object.material = negativeGuide;
+        object.castShadow = false;
+      });
       if (axisView?.camera === renderCamera) scene.fog = null;
       try {
-        renderer.render(scene, renderCamera);
+        targetRenderer.render(scene, renderCamera);
       } finally {
+        for (const [object, material, castShadow] of striped) {
+          object.material = material;
+          object.castShadow = castShadow;
+        }
         scene.fog = fog;
       }
     });
@@ -659,10 +718,6 @@ export function createViewport(
     }
   }
 
-  function lockSize(value) {
-    recordingSize = value;
-    if (!value) resize();
-  }
   const cameraState = () => ({ position: camera.position.clone(), target: orbit.target.clone() });
   function restoreCamera(state) {
     if (Array.isArray(state.position)) {
@@ -681,6 +736,21 @@ export function createViewport(
   }
   return {
     render,
+    setFrameGuide(aspect) {
+      frameAspect = aspect;
+      updateFrameGuide();
+      measurement.invalidate();
+    },
+    renderOutput(width, height) {
+      outputRenderer ??= createRenderer();
+      if (outputWidth !== width || outputHeight !== height) {
+        outputWidth = width;
+        outputHeight = height;
+        outputRenderer.setSize(width, height, false);
+      }
+      render(true, true, true, outputRenderer);
+      return outputRenderer.domElement;
+    },
     pickColor,
     setMeasuring(active) {
       if (active) pickColor(undefined);
@@ -710,7 +780,8 @@ export function createViewport(
     },
     toggleAxis(axis) {
       axisView = changeAxisView(axisView, axis, camera, orbit.target, renderer.domElement, measurement.invalidate);
-      resizeAxisView(axisView, camera.aspect);
+      resizeAxisView(axisView, editingSize.x / editingSize.y);
+      updateFrameGuide();
       measurement.invalidate();
       updateControls();
     },
@@ -767,7 +838,6 @@ export function createViewport(
       showPivots = value;
     },
     updateSelection,
-    lockSize,
     canvas: renderer.domElement
   };
 }

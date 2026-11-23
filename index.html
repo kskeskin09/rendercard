@@ -63,12 +63,14 @@
             <span data-icon="chevron"></span>
           </button>
           <div id="export-menu" class="menu" hidden>
+            <button id="render-settings"><span data-icon="sliders"></span> Çözünürlük ve kadraj</button>
             <button id="watch-render"><span data-icon="play"></span> Önizleme izle</button>
             <button id="png">
               <span data-icon="image"></span> Görsel indir (PNG)</button
             ><button id="video">
               <span data-icon="video"></span> Animasyonu indir
             </button>
+            <button id="export-model"><span data-icon="box"></span> 3B model dışa aktar</button>
           </div>
         </div>
       </div>
@@ -266,6 +268,7 @@
           </div>
         </div>
         <div id="viewport" class="viewport">
+          <div id="frame-guide" class="frame-guide" aria-hidden="true" hidden></div>
           <div class="viewport-tag">
             <span></span><b id="viewport-camera-name">Varsayılan</b>
           </div>
@@ -447,6 +450,7 @@
               <input id="duration" type="number" min="1" max="1800" value="120"
             /></label>
             <span>30 FPS</span>
+            <button id="paste-key" class="quiet" hidden title="Seçili nesneye ve geçerli kareye yapıştır">Kareyi yapıştır</button>
           </div>
         </section>
       </section>
@@ -472,9 +476,40 @@
       <button id="context-delete">Sil</button>
     </div>
     <div id="view-camera-menu" class="menu object-menu" hidden></div>
+    <dialog id="render-settings-dialog" class="export-dialog" aria-labelledby="render-settings-title">
+      <form id="render-settings-form">
+        <h2 id="render-settings-title">Çözünürlük ve kadraj</h2>
+        <label class="field">Hazır boyut<select id="render-preset"></select></label>
+        <div class="resolution-fields">
+          <label class="field">Genişlik (px)<input id="render-width" type="number" min="16" max="4096" required></label>
+          <label class="field">Yükseklik (px)<input id="render-height" type="number" min="16" max="4096" required></label>
+        </div>
+        <label class="check-field"><input id="render-guide" type="checkbox"> Düzenleme görünümünde kadrajı göster</label>
+        <p class="selection-tip">Video için genişlik ve yükseklik çift sayı olmalı.</p>
+        <div class="dialog-actions"><button id="close-render-settings" type="button" class="quiet">Vazgeç</button><button type="submit" class="primary">Uygula</button></div>
+      </form>
+    </dialog>
+    <dialog id="model-dialog" class="export-dialog" aria-labelledby="model-title">
+      <form id="model-form">
+        <h2 id="model-title">3B model dışa aktar</h2>
+        <label class="field">Dosya biçimi<select id="model-format">
+          <option value="glb">GLB · Model ve animasyon</option>
+          <option value="gltf">glTF · Model ve animasyon</option>
+          <option value="obj">OBJ · Geometri</option>
+          <option value="stl">STL · Geometri</option>
+        </select></label>
+        <label class="field">Kapsam<select id="model-scope">
+          <option value="scene">Sahnedeki nesneler</option><option value="selection">Seçili nesneler</option>
+        </select></label>
+        <label id="model-animations-field" class="check-field"><input id="model-animations" type="checkbox" checked> Etkin animasyonları ekle</label>
+        <p id="model-format-help" class="selection-tip"></p>
+        <div class="dialog-actions"><button id="close-model-dialog" type="button" class="quiet">Vazgeç</button><button type="submit" class="primary">Dışa aktar</button></div>
+      </form>
+    </dialog>
     <div id="timeline-menu" class="menu object-menu" hidden>
       <label id="timeline-camera-field" class="field">Geçilecek kamera<select id="timeline-camera-change"></select></label>
       <button id="timeline-move">Taşı</button>
+      <button id="timeline-copy">Kopyala</button>
       <button id="timeline-delete">Sil</button>
     </div>
     <dialog id="render-preview" aria-labelledby="render-preview-title">

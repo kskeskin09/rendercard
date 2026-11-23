@@ -745,3 +745,46 @@ test('history revisions recognize returning to the saved state and diverging aga
   assert.notEqual(history.revision, saved);
   assert.equal(history.canRedo, false);
 });
+
+test('render presets fit the editing area and custom resolution survives serialization', async () => {
+  const { fitRenderFrame, validRenderSize, defaultRenderSize } = await import('../src/render-settings.js');
+  const resolution = { width: 1080, height: 1920 };
+  assert(validRenderSize(resolution));
+  assert.equal(validRenderSize({ width: 9000, height: 720 }), false);
+  assert.deepEqual(fitRenderFrame(960, 540, 9 / 16), { width: 303.75, height: 540 });
+  const root = new Group();
+  assert.deepEqual(decodeProject(encodeProject(root, 120)).renderSize, defaultRenderSize);
+  assert.deepEqual(decodeProject(encodeProject(root, 120, undefined, undefined, undefined, 'Sahne', resolution)).renderSize, resolution);
+});
+
+test('a model snapshot preserves selected hierarchy and carries sampled transform-only tracks', async () => {
+  const { snapshotModel, sampleTracks, writeModel, disposeModel } = await import('../src/model-export.js');
+  const root = new Group();
+  const group = makeObject('group', 'Ebeveyn');
+  const object = makeObject('box', 'Gösterim kutusu', '#ffffff', 24, { hidden: true, opacity: 50, finish: 'tile', tile: 'brick' });
+  const other = makeObject('box', 'Kapsam dışı');
+  group.add(object, other);
+  root.add(group);
+  const snapshot = snapshotModel(root, [object], 16 / 9);
+  assert.equal(snapshot.meshes, 1);
+  assert.equal(snapshot.scene.children[0].name, 'Ebeveyn');
+  assert.deepEqual(snapshot.scene.children[0].children.map(child => child.name), [object.name]);
+  assert.equal(snapshot.pairs.get(object).material.opacity, .5);
+  assert(snapshot.pairs.get(object).material.map);
+  const samples = sampleTracks(snapshot.pairs, 30);
+  samples.add(0);
+  group.position.x = 4;
+  object.rotation.y = 1;
+  samples.add(30);
+  const clip = samples.clip('Hareket');
+  assert.equal(clip.duration, 1);
+  assert.equal(clip.tracks.length, 2);
+  assert(clip.tracks.some(track => track.name.endsWith('.position')));
+  assert(clip.tracks.some(track => track.name.endsWith('.quaternion')));
+  const obj = await (await writeModel(snapshot.scene, 'obj', [])).text();
+  assert.match(obj, /o Gösterim kutusu/);
+  assert.doesNotMatch(obj, /Kapsam dışı/);
+  const stl = await (await writeModel(snapshot.scene, 'stl', [])).arrayBuffer();
+  assert.equal(new DataView(stl).getUint32(80, true), 12);
+  disposeModel(snapshot.scene);
+});

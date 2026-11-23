@@ -27,7 +27,7 @@ Animasyon 30 FPS olarak WebM veya MP4 biçiminde yazılır. Tarayıcı sürümü
 2. Sahne listesinden aynı düzeydeki nesneleri **Shift** ile seçip **Grupla** düğmesine tıklayın. Grup ortak bir dönüşümle hareket eder ve alt nesneler düzenlenebilir kalır.
 3. **Tel kafes** düğmesiyle üçgen kenarlarını görün. Kutuda **Taban kenarı** üst ve alt yüzeyi birlikte değiştirir. Piramitte bu ayar tabanın kenar sayısını belirler. Piramit ve çokgen kutuda **Kenar yumuşatma** kenarlar ve köşeler için kullanılır. Toplam üçgen sayısı alt çubukta görünür.
 4. Nesneyi seçip ilk pozda **Kare ekle** düğmesine tıklayın. Zaman çizelgesinde başka bir kareye gidin, nesneyi taşıyın, döndürün veya ölçekleyin ve yeni pozu kaydedin. **Oynat** ile aradaki hareketi izleyin.
-5. **Kaydet** ile düzenlenebilir JSON projesini kaydedin. **Render al** menüsündeki **Önizleme izle** çıktıyı zaman çizelgesiyle gösterir. Aynı menüden PNG veya video kaydedebilirsiniz.
+5. **Kaydet** ile düzenlenebilir JSON projesini kaydedin. **Render al → Çözünürlük ve kadraj** bölümünden yatay, dikey veya özel piksel boyutu seçin. **Önizleme izle** seçilen kadrajı zaman çizelgesiyle gösterir. Aynı menüden PNG, video veya 3B model kaydedebilirsiniz.
 
 Örnek sahnedeki **Kutu** hazır bir animasyona sahiptir. `Q` seçim, `G` taşıma, `R` döndürme, `S` ölçekleme, `K` kare ekleme ve `Boşluk` oynatma içindir. `Ctrl+Z` sahne düzenlemelerini geri alır, `Ctrl+Y` yineler. `Ctrl+D` seçimi çoğaltır, `F` seçime odaklanır. Her iki komut da 3B görünüm ve nesne listesindeki sağ tık menüsünde bulunur.
 
@@ -61,7 +61,7 @@ Dönüşte **Kısa yol** veya **Uzun yol** yönelimi izler. **X, Y, Z açıları
 
 Yeni **Kamera**, yere paralel olarak sahnenin −Z yönüne bakar. Düzenleyicide kamera gövdesi ve baktığı yönde saydam bir çerçeve görünür. Düzenleme bakışı bir kameraya yaklaştığında o kameranın işaretçisi gizlenir ve uzaklaşınca geri görünür. Zaman çizelgesindeki **Kamera → Bu karede geç** komutu seçili animasyona kesme ekler. Oynatma ve dışa aktarma ilgili karedeki kamerayı kullanır.
 
-Kare veya kamera geçişi işaretini sağ tıklayarak **Taşı** ya da **Sil** komutlarını kullanın. Taşımak için yeni kareye sol tıklayın. Kamera geçişinin hedefini aynı menüden değiştirebilirsiniz. Bir animasyon satırındaki kare işareti o kareye kaydedilmiş tüm nesne pozlarını temsil eder.
+Her nesnenin kareleri kendi satırındadır. Kamera geçişleri ayrı satırda gösterilir. Kareyi sağ tıklayarak taşıyabilir, silebilir veya kopyalayabilirsiniz. Kopyalanan pozu, hedef nesne ve kareyi seçip **Kareyi yapıştır** ile uygulayın. Kamera geçişinin hedefi sağ tık menüsünden değişir.
 
 Kamera sıfırlama düğmesine sol tıklamak varsayılan görünümü açar. Sağ tıklayıp kamera seçtiğinizde o açıdan serbestçe dolaşabilirsiniz. Oynatmayı duraklatınca son kamera açısı korunur. Kamera silinirse ona ait geçiş işaretleri de kalkar. **Kamera takibi** seçilen nesnenin merkezine bakar ve takip başlarken ölçülen uzaklığı ve yönü korur. **Katı cisimlerden etkilen** açıkken kamera engel boyunca hareket edebilir ve yol açılınca takip konumuna geri döner. **Mesafeyi yeniden al** mevcut konumu yeni takip konumu olarak kullanır.
 
@@ -72,3 +72,11 @@ Kamera sıfırlama düğmesine sol tıklamak varsayılan görünümü açar. Sa�
 Grup çözülürken dönüşümler çocuk nesnelere aktarılır. Grubu çözebilmek için grubun anahtar karelerini kaldırın ve üç eksendeki grup ölçeğini eşitleyin.
 
 Sahne araçlarındaki **Birleştir** düğmesi, birbirine değmeyen nesneleri de tek ağda toplar. Pozitif nesneleri birleştirdiğinizde **Orta**, kaynak nesnelerin merkezlerinin ortalamasıdır. Bu nokta iki ayrı nesne arasında boşluğa düşebilir. Birleştirme animasyonsuz nesnelerde çalışır ve renkleri korur. Seçimdeki negatif nesnelerin açtığı delikler kalıcılaşır.
+
+## 3B model dışa aktarma
+
+**Render al → 3B model dışa aktar** menüsünden sahne veya seçim kapsamını belirleyin. **GLB** ve **glTF**, geometriyi, renkleri, dokuları ve isteğe bağlı animasyonları taşır. GLB ikili tek dosyadır. glTF JSON’dur ve kaynakları içine gömer. Tile dokuları UV koordinatlarıyla saklanır. Köşelerdeki doku geçişleri editör görünümünden farklı olabilir.
+
+Etkin animasyonlar ayrı klip olarak yazılır. Her klip için konum, dönüş ve boyut saniyede 30 kez örneklenir. Örneğin fiziksel sekme, fizik ayarları yerine hareket ettiği konumlar olarak taşınır. Kamera nesneleri ve hareketleri aktarılabilir. Kamera kesmeleri ve kareye göre değişen görünürlük glTF klibine aktarılmaz. Canlı kesimler geçerli karenin geometrisine dönüştürülür. Animasyonu içe aktaran uygulamada klip olarak oynatın. [glTF animasyon kanalları](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#animations)
+
+**OBJ** ve **STL** geçerli karenin geometrisini taşır. Bu çıktılar malzeme ve animasyon içermez. Düzenleme görünümünde boşta duran negatif cisimleri gösteren yarı saydam şeritler render veya 3B model dosyasına eklenmez.

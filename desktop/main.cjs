@@ -21,7 +21,11 @@ const saveFormats = new Map([
   ],
   ['rendercard.png', { name: 'PNG görseli', extensions: ['png'] }],
   ['rendercard.webm', { name: 'WebM videosu', extensions: ['webm'] }],
-  ['rendercard.mp4', { name: 'MP4 videosu', extensions: ['mp4'] }]
+  ['rendercard.mp4', { name: 'MP4 videosu', extensions: ['mp4'] }],
+  ['rendercard.glb', { name: 'GLB modeli', extensions: ['glb'] }],
+  ['rendercard.gltf', { name: 'glTF modeli', extensions: ['gltf'] }],
+  ['rendercard.obj', { name: 'OBJ modeli', extensions: ['obj'] }],
+  ['rendercard.stl', { name: 'STL modeli', extensions: ['stl'] }]
 ]);
 
 protocol.registerSchemesAsPrivileged([

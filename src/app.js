@@ -36,6 +36,7 @@ import { angularTrajectory, trajectory } from './dynamics.js';
 import { chooseTrack, hasKeys, keysFor, mainClip, posesOf } from './clips.js';
 import { cameraAt, writeCameraKey } from './camera-track.js';
 import { applySelectionTransform, selectionTransforms } from './multi-transform.js';
+import { defaultRenderSize, renderSizes, validRenderSize } from './render-settings.js';
 import { bindColor, fogColorMarkup } from './color-editor.js';
 import {
   axes,
@@ -67,6 +68,8 @@ let drag;
 let presetScene;
 let presets;
 let atmosphere = { ...defaultAtmosphere };
+let renderSize = { ...defaultRenderSize };
+let renderGuide = false;
 let physicsCache = new WeakMap();
 let angularCache = new WeakMap();
 let sequence;
@@ -88,6 +91,7 @@ let sceneExpanded = false;
 let previewStart;
 let timelineTarget;
 let movingKey;
+let copiedKey;
 let activePicker;
 
 function status(message) {
@@ -132,7 +136,7 @@ function captureScene() {
   forObjects((object) => objects.push(object));
   return {
     project: JSON.stringify(
-      encodeProject(root, duration, animations, atmosphere, undefined, sceneName)
+      encodeProject(root, duration, animations, atmosphere, undefined, sceneName, renderSize)
     ),
     frame,
     selection: [...selected].map((object) => objects.indexOf(object))
@@ -149,6 +153,8 @@ function replaceScene(state) {
   animations = project.animations;
   atmosphere = project.atmosphere;
   sceneName = project.name;
+  renderSize = project.renderSize;
+  updateRenderGuide();
   resetPhysics();
   frame = state.frame;
   selected.clear();
@@ -189,6 +195,7 @@ function resetPhysics() {
 function describeEdit(before, after) {
   const a = JSON.parse(before.project);
   const b = JSON.parse(after.project);
+  if (JSON.stringify(a.renderSize) !== JSON.stringify(b.renderSize)) return 'Render çözünürlüğünü değiştir';
   if (a.name !== b.name) return 'Sahnenin adını değiştir';
   if (JSON.stringify(a.atmosphere) !== JSON.stringify(b.atmosphere))
     return 'Sisi düzenle';
@@ -507,17 +514,36 @@ function updateTimeline() {
   $('frame').max = duration;
   $('duration').value = duration;
   paintClips();
-  const tracks = animations.clips.filter((clip) =>
+  const clips = animations.clips.filter((clip) =>
     animations.enabled.includes(clip.id)
   );
-  const labels = tracks.map((clip) => {
-    const label = document.createElement('span');
-    label.textContent = clip.name;
-    label.title = clip.name;
+  const tracks = [];
+  const objects = [];
+  forObjects(object => objects.push(object));
+  for (const clip of clips) {
+    const cameras = animations.cameraTracks?.[clip.id] ?? [];
+    if (cameras.length || clip.id === animations.active) tracks.push({ clip, keys: cameras, camera: true });
+    for (const object of objects) {
+      const keys = keysFor(object, clip.id);
+      if (keys.length || (clip.id === animations.active && selected.has(object)))
+        tracks.push({ clip, keys, object });
+    }
+  }
+  const labels = tracks.map(({ clip, object, camera }) => {
+    const label = document.createElement(object ? 'button' : 'span');
+    const name = camera ? 'Kamera geçişleri' : object.name;
+    label.textContent = clips.length > 1 ? clip.name + ' · ' + name : name;
+    label.title = clip.name + ' · ' + name;
+    if (object) {
+      label.classList.toggle('selected', selected.has(object));
+      label.onclick = event => select(object, event.shiftKey);
+    }
     return label;
   });
   $('track-name').replaceChildren(...labels);
-  $('track').style.minHeight = Math.max(48, 22 + 20 * tracks.length) + 'px';
+  $('track').style.minHeight = Math.max(48, 19 + 20 * tracks.length) + 'px';
+  $('paste-key').hidden = !copiedKey;
+  $('paste-key').disabled = !single();
   const tickCount = Math.min(duration, 8);
   $('ticks').replaceChildren(
     ...Array.from({ length: tickCount + 1 }, (_, index) => {
@@ -530,66 +556,45 @@ function updateTimeline() {
     })
   );
   $('key-markers').replaceChildren(
-    ...tracks.flatMap((clip, lane) => {
-      const frames = new Set();
-      forObjects((object) =>
-        keysFor(object, clip.id).forEach((key) => frames.add(key.frame))
-      );
-      const objectMarkers = [...frames]
-        .filter((value) => value <= duration)
-        .map((value) => {
-          const marker = document.createElement('button');
-          marker.className = 'key-dot';
-          marker.style.top = 19 + lane * 20 + 'px';
-          marker.title = clip.name + ' · ' + value;
-          marker.style.left = (value / duration) * 100 + '%';
-          bindTimelineMarker(marker, { clip: clip.id, frame: value, lane, camera: false });
-          return marker;
-        });
-      const cameraMarkers = (animations.cameraTracks?.[clip.id] ?? [])
+    ...tracks.flatMap(({ clip, keys, object, camera }, lane) => keys
         .filter((key) => key.frame <= duration)
         .map((key) => {
           const marker = document.createElement('button');
-          marker.className = 'key-dot camera-dot';
-          marker.style.top = 28 + lane * 20 + 'px';
+          marker.className = 'key-dot' + (camera ? ' camera-dot' : '');
+          marker.style.top = 23 + lane * 20 + 'px';
           marker.style.left = (key.frame / duration) * 100 + '%';
-          marker.title =
-            (getCamera(key.camera)?.name ?? 'Varsayılan') + ' · ' + key.frame;
-          bindTimelineMarker(marker, { clip: clip.id, frame: key.frame, lane, camera: true });
+          marker.title = (camera ? (getCamera(key.camera)?.name ?? 'Varsayılan') : object.name) + ' · ' + key.frame;
+          bindTimelineMarker(marker, { clip: clip.id, frame: key.frame, lane, camera, object });
           return marker;
-        });
-      return [...objectMarkers, ...cameraMarkers];
-    })
+        }))
   );
   refreshFrame();
 }
 
 function timelineKeys(target) {
-  if (target.camera) return [animations.cameraTracks?.[target.clip] ?? []];
-  const tracks = [];
-  forObjects(object => {
-    const keys = keysFor(object, target.clip);
-    if (keys.some(key => key.frame === target.frame)) tracks.push(keys);
-  });
-  return tracks;
+  return target.camera ? animations.cameraTracks?.[target.clip] ?? [] : keysFor(target.object, target.clip);
 }
 
 function bindTimelineMarker(marker, target) {
   marker.setAttribute('aria-label', (target.camera ? 'Kamera geçişi · ' : 'Anahtar kare · ') + marker.title);
-  marker.onclick = () => stopAt(target.frame);
+  marker.onclick = () => {
+    stopAt(target.frame);
+    if (target.object && !selected.has(target.object)) select(target.object);
+  };
   marker.oncontextmenu = event => {
     event.preventDefault();
     cancelKeyMove();
     timelineTarget = target;
     const menu = $('timeline-menu');
     $('timeline-camera-field').hidden = !target.camera;
+    $('timeline-copy').hidden = Boolean(target.camera);
     if (target.camera) {
       const select = $('timeline-camera-change');
       select.replaceChildren(new Option('Varsayılan', ''));
       forObjects(object => {
         if (object.isCamera) select.add(new Option(object.name, object.userData.cameraId));
       });
-      select.value = timelineKeys(target)[0].find(key => key.frame === target.frame)?.camera ?? '';
+      select.value = timelineKeys(target).find(key => key.frame === target.frame)?.camera ?? '';
     }
     menu.hidden = false;
     menu.style.left = Math.max(0, Math.min(event.clientX, innerWidth - menu.offsetWidth - 5)) + 'px';
@@ -618,7 +623,7 @@ $('timeline-move').onclick = () => {
   const { lane, camera, frame } = timelineTarget;
   const marker = document.createElement('span');
   marker.className = 'key-dot moving-dot' + (camera ? ' camera-dot' : '');
-  marker.style.top = (camera ? 28 : 19) + lane * 20 + 'px';
+  marker.style.top = 23 + lane * 20 + 'px';
   marker.style.left = (frame / duration) * 100 + '%';
   $('track').append(marker);
   $('track').classList.add('moving-key');
@@ -630,13 +635,33 @@ $('timeline-delete').onclick = () => {
   $('timeline-menu').hidden = true;
   if (!target) return;
   edit(() => {
-    for (const keys of timelineKeys(target)) {
-      const index = keys.findIndex(key => key.frame === target.frame);
-      if (index >= 0) keys.splice(index, 1);
-    }
+    const keys = timelineKeys(target);
+    const index = keys.findIndex(key => key.frame === target.frame);
+    if (index >= 0) keys.splice(index, 1);
     frameTo(frame);
     updateTimeline();
   }, target.camera ? 'Kamera geçişini sil' : 'Anahtar kareyi sil');
+};
+$('timeline-copy').onclick = () => {
+  const target = timelineTarget;
+  $('timeline-menu').hidden = true;
+  if (!target?.object) return;
+  const key = timelineKeys(target).find(item => item.frame === target.frame);
+  if (!key) return;
+  copiedKey = structuredClone(key);
+  $('paste-key').hidden = false;
+  $('paste-key').disabled = !single();
+  status(target.object.name + ' · ' + target.frame + '. kare kopyalandı.');
+};
+$('paste-key').onclick = () => {
+  const object = single();
+  if (!object || !copiedKey) return;
+  edit(() => {
+    writeKey(object, frame, animations.active, structuredClone(copiedKey));
+    frameTo(frame);
+    updateTimeline();
+  }, 'Anahtar kareyi yapıştır');
+  status(object.name + ' · ' + frame + '. kareye yapıştırıldı.');
 };
 $('timeline-camera-change').onchange = event => {
   const target = timelineTarget;
@@ -644,7 +669,7 @@ $('timeline-camera-change').onchange = event => {
   $('timeline-menu').hidden = true;
   if (!target?.camera) return;
   edit(() => {
-    const key = timelineKeys(target)[0].find(entry => entry.frame === target.frame);
+    const key = timelineKeys(target).find(entry => entry.frame === target.frame);
     if (key) key.camera = camera;
     updateTimeline();
   }, 'Geçilecek kamerayı değiştir');
@@ -663,19 +688,17 @@ document.addEventListener('pointerdown', event => {
   event.stopImmediatePropagation();
   const target = movingKey.target;
   const destination = pointerFrame(event.clientX);
-  const tracks = timelineKeys(target);
-  if (destination !== target.frame && tracks.some(keys => keys.some(key => key.frame === destination))) {
+  const keys = timelineKeys(target);
+  if (destination !== target.frame && keys.some(key => key.frame === destination)) {
     status('Bu konumda zaten bir kare var. Başka bir kare seç.');
     return;
   }
   cancelKeyMove();
   if (destination === target.frame) return;
   edit(() => {
-    for (const keys of tracks) {
-      const key = keys.find(key => key.frame === target.frame);
-      if (key) key.frame = destination;
-      keys.sort((a, b) => a.frame - b.frame);
-    }
+    const key = keys.find(key => key.frame === target.frame);
+    if (key) key.frame = destination;
+    keys.sort((a, b) => a.frame - b.frame);
     frameTo(destination);
     updateTimeline();
   }, target.camera ? 'Kamera geçişini taşı' : 'Anahtar kareyi taşı');
@@ -1884,6 +1907,7 @@ $('duration').onchange = (event) =>
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') view?.pickColor(undefined);
   const key = event.key.toLowerCase();
+  if ($('render-settings-dialog').open || $('model-dialog').open) return;
   if ($('render-preview').open) {
     if (key === ' ' && document.activeElement?.tagName !== 'BUTTON') {
       event.preventDefault();
@@ -1995,7 +2019,8 @@ $('save').onclick = async () => {
         position: viewPose.position.toArray(),
         target: viewPose.target.toArray()
       },
-      sceneName
+      sceneName,
+      renderSize
     ),
     null,
     2
@@ -2025,6 +2050,8 @@ $('project-file').onchange = async (event) => {
       animations = project.animations;
       atmosphere = project.atmosphere;
       sceneName = project.name;
+      renderSize = project.renderSize;
+      updateRenderGuide();
       jumpToCamera();
       if (project.defaultView) view?.restoreCamera(project.defaultView);
       cameraOverride = undefined;
@@ -2048,6 +2075,45 @@ function showExport(show) {
   $('export').setAttribute('aria-expanded', show);
 }
 $('export').onclick = () => showExport($('export-menu').hidden);
+function updateRenderGuide() {
+  view?.setFrameGuide(renderGuide ? renderSize.width / renderSize.height : undefined);
+}
+const renderDialog = $('render-settings-dialog');
+const renderPreset = $('render-preset');
+renderPreset.replaceChildren(...renderSizes.map(([width, height]) =>
+  new Option(width + ' × ' + height, width + 'x' + height)), new Option('Özel', 'custom'));
+function chooseRenderPreset() {
+  const width = $('render-width').valueAsNumber;
+  const height = $('render-height').valueAsNumber;
+  renderPreset.value = renderSizes.some(([w, h]) => width === w && height === h) ? width + 'x' + height : 'custom';
+}
+$('render-settings').onclick = () => {
+  showExport(false);
+  $('render-width').value = renderSize.width;
+  $('render-height').value = renderSize.height;
+  $('render-guide').checked = renderGuide;
+  chooseRenderPreset();
+  renderDialog.showModal();
+};
+$('close-render-settings').onclick = () => renderDialog.close();
+renderPreset.onchange = () => {
+  if (renderPreset.value === 'custom') return;
+  const [width, height] = renderPreset.value.split('x');
+  $('render-width').value = width;
+  $('render-height').value = height;
+};
+$('render-width').oninput = $('render-height').oninput = chooseRenderPreset;
+$('render-settings-form').onsubmit = event => {
+  event.preventDefault();
+  const size = { width: $('render-width').valueAsNumber, height: $('render-height').valueAsNumber };
+  if (!validRenderSize(size)) return;
+  renderGuide = $('render-guide').checked;
+  if (size.width !== renderSize.width || size.height !== renderSize.height)
+    edit(() => { renderSize = size; }, 'Render çözünürlüğünü değiştir');
+  updateRenderGuide();
+  renderDialog.close();
+  status('Render boyutu ' + size.width + ' × ' + size.height + ' piksel.');
+};
 const preview = $('render-preview');
 const previewCanvas = $('render-preview-image');
 const previewContext = previewCanvas.getContext('2d');
@@ -2086,14 +2152,15 @@ preview.onclose = () => {
 };
 
 function paintRenderPreview() {
-  const { canvas } = view;
-  const signature = [frame, canvas.width, canvas.height].join(':');
+  const { width, height } = renderSize;
+  const signature = [frame, width, height].join(':');
   if (previewPainted === signature) return;
   previewPainted = signature;
-  previewCanvas.width = canvas.width;
-  previewCanvas.height = canvas.height;
-  view.render(true);
-  previewContext.drawImage(canvas, 0, 0);
+  if (previewCanvas.width !== width || previewCanvas.height !== height) {
+    previewCanvas.width = width;
+    previewCanvas.height = height;
+  }
+  previewContext.drawImage(view.renderOutput(width, height), 0, 0);
   $('preview-scrub').value = frame;
   $('preview-time').textContent = frame + ' / ' + duration + ' kare';
 }
@@ -2109,8 +2176,7 @@ document.addEventListener('keydown', (event) => {
 $('png').onclick = () => {
   showExport(false);
   if (!view) return;
-  view.render(true);
-  view.canvas.toBlob((blob) => {
+  view.renderOutput(renderSize.width, renderSize.height).toBlob((blob) => {
     if (blob) void saveOutput(blob, 'rendercard.png', 'PNG');
     else status('Görsel oluşturulamadı.');
   }, 'image/png');
@@ -2123,6 +2189,10 @@ async function recordVideo() {
     status('Bu tarayıcı video kodlamayı desteklemiyor.');
     return;
   }
+  if (renderSize.width % 2 || renderSize.height % 2) {
+    status('Video için Çözünürlük ve kadraj menüsünde iki boyutu da çift sayı yap.');
+    return;
+  }
   const oldFrame = frame;
   const poses = new Map();
   forObjects((object) => poses.set(object, capture(object)));
@@ -2133,10 +2203,9 @@ async function recordVideo() {
   const actions = document.querySelector('.topbar');
   workspace.inert = true;
   actions.inert = true;
-  view.lockSize(true);
   try {
     const { encodeVideo } = await import('./video.js');
-    const { blob, name } = await encodeVideo(view, duration, fps, (next) => {
+    const { blob, name } = await encodeVideo(view, renderSize, duration, fps, (next) => {
       frame = next;
       poseScene(frame > 0);
       updateCameraView();
@@ -2155,7 +2224,6 @@ async function recordVideo() {
     recording = false;
     workspace.inert = false;
     actions.inert = false;
-    view.lockSize(false);
     frameTo(oldFrame);
     for (const [object, pose] of poses) applyPose(object, pose);
     refreshTransform();
@@ -2165,6 +2233,107 @@ $('video').onclick = () => {
   if (!recording && view) status('Animasyon kaydediliyor…');
   void recordVideo();
 };
+
+const modelDialog = $('model-dialog');
+const modelHelp = {
+  glb: 'Geometri, renk, dokular ve animasyonlar tek dosyada. Kamera geçişleri ve canlı kesimler aktarılmaz.',
+  gltf: 'Düzenlenebilir JSON. Geometri, dokular ve animasyonlar dosyaya gömülür. Kamera geçişleri ve canlı kesimler aktarılmaz.',
+  obj: 'Geçerli karenin geometrisi aktarılır. Animasyon ve malzeme aktarılmaz.',
+  stl: 'Geçerli karenin üçgen yüzeyleri aktarılır. Animasyon ve malzeme aktarılmaz.'
+};
+function paintModelOptions() {
+  const format = $('model-format').value;
+  $('model-animations-field').hidden = format !== 'glb' && format !== 'gltf';
+  $('model-format-help').textContent = modelHelp[format];
+}
+$('model-format').onchange = paintModelOptions;
+$('export-model').onclick = () => {
+  showExport(false);
+  if (recording) return;
+  const option = $('model-scope').querySelector('option[value="selection"]');
+  option.disabled = !selected.size;
+  if (!selected.size) $('model-scope').value = 'scene';
+  paintModelOptions();
+  modelDialog.showModal();
+};
+$('close-model-dialog').onclick = () => modelDialog.close();
+$('model-form').onsubmit = event => {
+  event.preventDefault();
+  modelDialog.close();
+  const format = $('model-format').value;
+  const targets = $('model-scope').value === 'selection' ? independentSelection() : root.children.slice();
+  const animated = (format === 'glb' || format === 'gltf') && $('model-animations').checked;
+  void exportModel(format, targets, animated);
+};
+
+async function exportModel(format, targets, animated) {
+  if (recording) return;
+  setPlaying(false);
+  const oldFrame = frame;
+  const enabled = animations.enabled;
+  const includedClips = sequence?.ids ?? enabled;
+  const savedPoses = new Map();
+  forObjects(object => savedPoses.set(object, capture(object)));
+  const restorePoses = () => {
+    for (const [object, pose] of savedPoses) applyPose(object, pose);
+  };
+  recording = true;
+  const workspace = document.querySelector('.workspace');
+  const topbar = document.querySelector('.topbar');
+  workspace.inert = topbar.inert = true;
+  status('3B model hazırlanıyor…');
+  let snapshot;
+  let exporter;
+  try {
+    exporter = await import('./model-export.js');
+    animations.enabled = includedClips;
+    updateSceneVisibility();
+    snapshot = exporter.snapshotModel(root, targets, renderSize.width / renderSize.height);
+    const geometryOnly = format === 'obj' || format === 'stl';
+    if (geometryOnly ? !snapshot.meshes : !snapshot.scene.children.length) {
+      status('Bu kapsamda dışa aktarılacak ' + (geometryOnly ? 'geometri' : 'nesne') + ' yok.');
+      return;
+    }
+    const clips = [];
+    if (animated) {
+      for (const clip of animations.clips.filter(item => includedClips.includes(item.id))) {
+        animations.enabled = [clip.id];
+        restorePoses();
+        updateSceneVisibility();
+        resetPhysics();
+        const track = exporter.sampleTracks(snapshot.pairs, fps);
+        for (let next = 0; next <= duration; next++) {
+          frame = next;
+          poseScene(next > 0);
+          updateFollowers();
+          track.add(next);
+          if (next % 30 === 0) {
+            status(clip.name + ' hazırlanıyor · ' + next + ' / ' + duration);
+            await new Promise(resolve => setTimeout(resolve, 0));
+          }
+        }
+        const motion = track.clip(clip.name);
+        if (motion) clips.push(motion);
+      }
+    }
+    const blob = await exporter.writeModel(snapshot.scene, format, clips);
+    await saveOutput(blob, 'rendercard.' + format, format.toUpperCase());
+  } catch (error) {
+    console.error('3B model dışa aktarılamadı.', error);
+    status('3B model dışa aktarılamadı.');
+  } finally {
+    if (snapshot) exporter.disposeModel(snapshot.scene);
+    restorePoses();
+    animations.enabled = enabled;
+    frame = oldFrame;
+    updateSceneVisibility();
+    resetPhysics();
+    recording = false;
+    workspace.inert = topbar.inert = false;
+    refreshFrame();
+    refreshTransform();
+  }
+}
 
 function populate() {
   const platform = makeObject('box', 'Kaide', '#596c61');

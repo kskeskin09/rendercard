@@ -31,6 +31,7 @@ import {
 import { profileTime, accelerationOffset } from './motion.js';
 import { roundedEdges } from './edge-geometry.js';
 import { roundedPolygon } from './rounded-polygon.js';
+import { defaultRenderSize, validRenderSize } from './render-settings.js';
 import { updateOpacity } from './opacity.js';
 import { releaseCut, sceneCuts } from './boolean-cuts.js';
 
@@ -53,7 +54,7 @@ export const types = {
   camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 9;
+export const projectVersion = 10;
 export const shapeSides = [3, 4, 5, 6, 8, 16, 32, 64];
 export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid'].includes(type);
 const channels = ['position', 'rotation', 'scale'];
@@ -413,11 +414,11 @@ export function applyPose(object, pose) {
   for (const channel of channels) object[channel].fromArray(pose[channel]);
 }
 
-export function writeKey(object, frame, clip = 'main') {
+export function writeKey(object, frame, clip = 'main', pose = capture(object)) {
   const keys = keysFor(object, clip, true);
   object.userData.restPose ??= capture(object);
   const previous = keys.findIndex((key) => key.frame === frame);
-  const key = { frame, ...capture(object) };
+  const key = { ...pose, frame };
   if (previous >= 0) keys.splice(previous, 1, key);
   else keys.push(key);
   keys.sort((a, b) => a.frame - b.frame);
@@ -488,7 +489,8 @@ export function encodeProject(
   animations,
   atmosphere,
   defaultView,
-  name
+  name,
+  renderSize
 ) {
   return {
     version: projectVersion,
@@ -497,6 +499,7 @@ export function encodeProject(
     atmosphere,
     defaultView,
     name,
+    renderSize,
     objects: root.children.map(encodeObject)
   };
 }
@@ -685,7 +688,8 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, 5, 6, 7, 8, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9, projectVersion].includes(project?.version) ||
+    (project.renderSize != null && !validRenderSize(project.renderSize)) ||
     (project.name != null && (typeof project.name !== 'string' || project.name.length > 80 || !project.name.trim())) ||
     !validFrame(project.duration) ||
     project.duration < 1 ||
@@ -762,6 +766,7 @@ export function decodeProject(project) {
     animations: structuredClone(animations),
     atmosphere: { ...atmosphere },
     defaultView: defaultView && structuredClone(defaultView),
+    renderSize: { ...(project.renderSize ?? defaultRenderSize) },
     objects: project.objects.map(decode)
   };
 }
