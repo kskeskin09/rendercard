@@ -9,7 +9,7 @@ import { localBounds } from './spatial.js';
 import { updateOpacity } from './opacity.js';
 import { withSceneCuts } from './boolean-cuts.js';
 import { updateTileBounds } from './tiles.js';
-import { axisLabels, changeAxisView, resizeAxisView } from './axis-view.js';
+import { axisLabels, changeAxisView, resizeAxisView, stopOrbitMotion } from './axis-view.js';
 import { createMeasurement } from './measurement.js';
 import { fitRenderFrame } from './render-settings.js';
 
@@ -62,6 +62,10 @@ export function createViewport(
   let previewShot = false;
   let savedDefault;
   let axisView;
+  let namedView;
+  const cameraViews = new Map();
+  const axisViews = new Map();
+  const axisButtons = [...element.querySelectorAll('[data-view-axis]')];
   const orbit = new OrbitControls(camera, renderer.domElement);
   const measurement = createMeasurement(root, scene, renderer.domElement, element.querySelector('#measurement-label'), measurementSettings);
   orbit.addEventListener('change', measurement.invalidate);
@@ -226,10 +230,22 @@ export function createViewport(
     if (axisView) axisView.controls.enabled = !staged && !transform.dragging;
     transform.enabled = !staged && !measurement.active;
     transform.camera = axisView?.camera ?? camera;
+    for (const button of axisButtons) {
+      button.setAttribute('aria-pressed', String(button.dataset.viewAxis === axisView?.axis));
+    }
+  }
+
+  function rememberAxis() {
+    if (!axisView) return;
+    stopOrbitMotion(axisView.controls);
+    axisViews.set(axisView.axis, {
+      center: axisView.controls.target.clone(), height: axisView.height / axisView.camera.zoom
+    });
   }
 
   function closeAxisView() {
     if (!axisView) return;
+    rememberAxis();
     axisView.controls.dispose();
     axisView = undefined;
     updateFrameGuide();
@@ -593,7 +609,8 @@ export function createViewport(
   }
 
   function render(clean = false, useShot = clean || previewShot, includeHidden = clean, targetRenderer = renderer) {
-    (axisView?.controls ?? orbit).update();
+    const control = axisView?.controls ?? orbit;
+    if (control.enabled) control.update();
     const restore = [];
     root.traverse(object => {
       if (object === root) return;
@@ -719,6 +736,10 @@ export function createViewport(
   }
 
   const cameraState = () => ({ position: camera.position.clone(), target: orbit.target.clone() });
+  function rememberPerspective() {
+    stopOrbitMotion(orbit);
+    if (namedView) cameraViews.set(namedView.id, { ...namedView, ...cameraState() });
+  }
   function restoreCamera(state) {
     if (Array.isArray(state.position)) {
       camera.position.fromArray(state.position);
@@ -730,6 +751,8 @@ export function createViewport(
     orbit.update();
   }
   function useDefaultView() {
+    rememberPerspective();
+    namedView = undefined;
     if (!savedDefault) return;
     restoreCamera(savedDefault);
     savedDefault = undefined;
@@ -770,6 +793,8 @@ export function createViewport(
       defaultLights.visible = settings.defaultLight;
     },
     setShot(object, preview, output) {
+      const control = axisView?.controls ?? orbit;
+      if (control.enabled && preview && (object || axisView)) stopOrbitMotion(control);
       shotObject = object;
       outputShot = output;
       previewShot = preview;
@@ -779,7 +804,10 @@ export function createViewport(
       return axisLabels[axisView?.axis];
     },
     toggleAxis(axis) {
-      axisView = changeAxisView(axisView, axis, camera, orbit.target, renderer.domElement, measurement.invalidate);
+      if (axisView) rememberAxis();
+      else rememberPerspective();
+      axisView = changeAxisView(axisView, axis, camera, orbit.target, renderer.domElement,
+        measurement.invalidate, axisViews.get(axis));
       resizeAxisView(axisView, editingSize.x / editingSize.y);
       updateFrameGuide();
       measurement.invalidate();
@@ -815,14 +843,29 @@ export function createViewport(
     reset() {
       closeAxisView();
       if (savedDefault) useDefaultView();
-      else reset();
+      else {
+        stopOrbitMotion(orbit);
+        reset();
+      }
     },
     useDefaultView,
     useCameraView(object) {
       closeAxisView();
       if (!object) return useDefaultView();
+      rememberPerspective();
       savedDefault ??= cameraState();
-      object.getWorldPosition(camera.position);
+      const origin = object.getWorldPosition(new THREE.Vector3());
+      const rotation = object.getWorldQuaternion(new THREE.Quaternion());
+      const id = object.userData.cameraId;
+      const previous = cameraViews.get(id);
+      namedView = { id, origin, rotation };
+      if (previous && previous.origin.distanceToSquared(origin) < 1e-10 &&
+          previous.rotation.angleTo(rotation) < 1e-5) {
+        restoreCamera(previous);
+        return;
+      }
+      cameraViews.delete(id);
+      camera.position.copy(origin);
       const distance = Math.max(1, object.userData.followOffset ? Math.hypot(...object.userData.followOffset) :
         savedDefault.position.distanceTo(savedDefault.target));
       orbit.target.copy(camera.position).addScaledVector(object.getWorldDirection(new THREE.Vector3()), distance);
@@ -831,7 +874,11 @@ export function createViewport(
     captureCamera: () => savedDefault ?? cameraState(),
     restoreCamera(state) {
       closeAxisView();
+      stopOrbitMotion(orbit);
       savedDefault = undefined;
+      namedView = undefined;
+      cameraViews.clear();
+      axisViews.clear();
       restoreCamera(state);
     },
     showPivots: (value) => {

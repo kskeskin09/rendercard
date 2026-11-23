@@ -305,9 +305,10 @@
               title="Mesafe ölç (M)"
             ></button>
           </div>
-          <div class="axis-widget" aria-hidden="true" title="X Sağ · Y Üst · Z Ön">
-            <span class="axis-y">Y</span><span class="axis-x">X</span
-            ><span class="axis-z">Z</span>
+          <div class="axis-widget" role="group" aria-label="Eksen görünümleri">
+            <button class="axis-y" data-view-axis="y" aria-pressed="false" aria-label="Üst görünüm" title="Üst görünüm (Y)">Y</button>
+            <button class="axis-x" data-view-axis="x" aria-pressed="false" aria-label="Sağ görünüm" title="Sağ görünüm (X)">X</button>
+            <button class="axis-z" data-view-axis="z" aria-pressed="false" aria-label="Ön görünüm" title="Ön görünüm (Z)">Z</button>
           </div>
           <div class="viewport-hint">
             Sürükle <b>Döndür</b><i></i> Tekerlek <b>Yakınlaş</b><i></i> Sağ
@@ -476,6 +477,17 @@
       <button id="context-delete">Sil</button>
     </div>
     <div id="view-camera-menu" class="menu object-menu" hidden></div>
+    <dialog id="join-dialog" class="export-dialog" aria-labelledby="join-title" aria-describedby="join-message">
+      <form id="join-form">
+        <h2 id="join-title">Animasyonlu cisimleri birleştir</h2>
+        <p id="join-message"></p>
+        <p id="join-motion-summary" class="selection-tip"></p>
+        <div class="dialog-actions">
+          <button id="cancel-join" type="button" class="quiet" autofocus>Vazgeç</button>
+          <button type="submit" class="primary">Kaldır ve birleştir</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="render-settings-dialog" class="export-dialog" aria-labelledby="render-settings-title">
       <form id="render-settings-form">
         <h2 id="render-settings-title">Çözünürlük ve kadraj</h2>

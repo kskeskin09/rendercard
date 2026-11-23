@@ -263,6 +263,9 @@ h3 {
   color: #303c21;
 }
 .object-row .object-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 20px;
   width: 20px;
   height: 22px;
   justify-content: center;
@@ -416,17 +419,28 @@ kbd {
   width: 56px;
   height: 55px;
   pointer-events: none;
+  z-index: 3;
 }
-.axis-widget span {
+.axis-widget button {
   position: absolute;
   width: 19px;
   height: 19px;
+  min-height: 19px;
+  padding: 0;
+  pointer-events: auto;
   display: grid;
   place-items: center;
   border-radius: 50%;
   font-size: 11px;
   font-weight: 750;
   color: #19241e;
+}
+.axis-widget button:hover:not(:disabled) {
+  background-color: #f3f5dc;
+}
+.axis-widget button[aria-pressed='true'] {
+  outline: 2px solid #f3f5dc;
+  outline-offset: 1px;
 }
 .axis-x {
   right: 0;
@@ -1489,6 +1503,21 @@ textarea,
 .export-dialog::backdrop { background: #1c241ac9; }
 .export-dialog h2 { margin-bottom: 12px; }
 .resolution-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+#render-settings-dialog { width: min(430px, calc(100vw - 2rem)); }
+#render-settings-dialog .field :is(input, select) {
+  width: 100%;
+  min-height: 36px;
+  min-width: 0;
+  padding: 5px 9px;
+  border: 1px solid #c6cebd;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+#join-message { line-height: 1.5; }
+#join-motion-summary { margin-top: 8px; }
 
 .track-caption { padding-top: 19px; }
 #track-name > :is(button, span) {

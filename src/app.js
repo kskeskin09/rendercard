@@ -1762,16 +1762,7 @@ $('group').onclick = () => {
   edit(() => select(groupObjects([...selected])), 'Cisimleri grupla');
   status('Nesneler gruplandı.');
 };
-$('join').onclick = () => {
-  const objects = [...selected];
-  if ($('join').disabled) return;
-  if (objects.some(hasKeys)) {
-    const message = 'Ağları birleştirmek için seçili nesnelerin anahtar karelerini kaldır.';
-    status(message);
-    toast(message, 'warning');
-    return;
-  }
-  setPlaying(false);
+function mergeSelection(objects) {
   edit(() => {
     const merged = joinMeshes(objects);
     if (!merged) {
@@ -1799,6 +1790,42 @@ $('join').onclick = () => {
       toast(message, 'warning');
     } else status('Geometri tek bir ağda birleştirildi.');
   }, 'Ağları birleştir');
+}
+
+const joinDialog = $('join-dialog');
+let pendingJoin;
+$('join').onclick = () => {
+  if ($('join').disabled) return;
+  setPlaying(false);
+  const objects = [...selected];
+  const keyed = objects.filter(hasKeys);
+  const physical = objects.filter(object =>
+    object.userData.positionMode === 'physics' || object.userData.rotationMode === 'physics');
+  if (!keyed.length && !physical.length) {
+    mergeSelection(objects);
+    return;
+  }
+  const count = keyed.reduce((total, object) => total + object.userData.keys.length +
+    Object.values(object.userData.tracks).reduce((sum, keys) => sum + keys.length, 0), 0);
+  $('join-message').textContent = count
+    ? 'Seçili cisimlerde anahtar kareler var. Kareler kaldırılıp cisimler bu karedeki halleriyle birleştirilsin mi?'
+    : 'Seçili cisimler fiziksel hareket kullanıyor. Hareket kaldırılıp cisimler bu karedeki halleriyle birleştirilsin mi?';
+  $('join-motion-summary').textContent = [
+    count ? count + ' anahtar kare' : '',
+    physical.length ? physical.length + ' fiziksel hareketli cisim' : ''
+  ].filter(Boolean).join(' · ');
+  pendingJoin = objects;
+  joinDialog.showModal();
+  $('cancel-join').focus();
+};
+$('cancel-join').onclick = () => joinDialog.close();
+joinDialog.onclose = () => { pendingJoin = undefined; };
+$('join-form').onsubmit = event => {
+  event.preventDefault();
+  const objects = pendingJoin;
+  pendingJoin = undefined;
+  joinDialog.close();
+  if (objects) mergeSelection(objects);
 };
 $('ungroup').onclick = () => {
   const group = single();
@@ -1904,10 +1931,21 @@ $('duration').onchange = (event) =>
     updateTimeline();
   });
 
+function switchAxis(axis) {
+  if (!view || recording) return;
+  setPlaying(false);
+  previewCamera = false;
+  cameraOverride = undefined;
+  $('preview-camera').setAttribute('aria-pressed', 'false');
+  view.toggleAxis(axis);
+  updateCameraView();
+}
+for (const button of all('[data-view-axis]')) button.onclick = () => switchAxis(button.dataset.viewAxis);
+
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') view?.pickColor(undefined);
   const key = event.key.toLowerCase();
-  if ($('render-settings-dialog').open || $('model-dialog').open) return;
+  if ($('render-settings-dialog').open || $('model-dialog').open || joinDialog.open) return;
   if ($('render-preview').open) {
     if (key === ' ' && document.activeElement?.tagName !== 'BUTTON') {
       event.preventDefault();
@@ -1950,12 +1988,7 @@ window.addEventListener('keydown', (event) => {
   if (['x', 'y', 'z'].includes(key)) {
     if (event.repeat) return;
     event.preventDefault();
-    setPlaying(false);
-    previewCamera = false;
-    cameraOverride = undefined;
-    $('preview-camera').setAttribute('aria-pressed', 'false');
-    view?.toggleAxis(key);
-    updateCameraView();
+    switchAxis(key);
     return;
   }
   if (key === 'm') {

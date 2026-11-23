@@ -791,3 +791,23 @@ test('a model snapshot preserves selected hierarchy and carries sampled transfor
   assert.equal(new DataView(stl).getUint32(80, true), 12);
   disposeModel(snapshot.scene);
 });
+
+test('stopping a damped orbit keeps the current camera pose without residual movement', async () => {
+  const { stopOrbitMotion } = await import('../src/axis-view.js');
+  const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+  const { PerspectiveCamera } = await import('three');
+  const camera = new PerspectiveCamera();
+  camera.position.set(5, 3, 8);
+  const controls = new OrbitControls(camera);
+  controls.enableDamping = true;
+  const original = camera.position.clone();
+  controls.rotateLeft(0.75);
+  assert(original.distanceTo(camera.position) > 0.01);
+  const stopped = camera.position.clone();
+  const target = controls.target.clone();
+  stopOrbitMotion(controls);
+  for (let i = 0; i < 20; i++) controls.update();
+  close(stopped.distanceTo(camera.position), 0);
+  close(target.distanceTo(controls.target), 0);
+  assert.equal(controls.enableDamping, true);
+});

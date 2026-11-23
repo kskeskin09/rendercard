@@ -31,7 +31,7 @@ Animasyon 30 FPS olarak WebM veya MP4 biçiminde yazılır. Tarayıcı sürümü
 
 Örnek sahnedeki **Kutu** hazır bir animasyona sahiptir. `Q` seçim, `G` taşıma, `R` döndürme, `S` ölçekleme, `K` kare ekleme ve `Boşluk` oynatma içindir. `Ctrl+Z` sahne düzenlemelerini geri alır, `Ctrl+Y` yineler. `Ctrl+D` seçimi çoğaltır, `F` seçime odaklanır. Her iki komut da 3B görünüm ve nesne listesindeki sağ tık menüsünde bulunur.
 
-`X` sağ, `Y` üst, `Z` ön görünümü açar. Bu görünümlerde perspektif kısalması yoktur. Aynı tuşa tekrar basmak serbest görünüme döner. Eksen görünümü, render kamerasını değiştirmez.
+`X` sağ, `Y` üst, `Z` ön görünümü açar. Sağ üstteki eksen düğmeleri de aynı işlemi yapar. Bu görünümlerde perspektif kısalması yoktur. Aynı ekseni tekrar seçmek serbest görünüme döner. Eksen görünümü, render kamerasını değiştirmez.
 
 **Mesafe ölç** düğmesini veya `M` tuşunu kullanın. İlk noktadan sonra çizgi ve mesafe imleci takip eder. İkinci tık ölçümü sabitler, üçüncü tık yeni ölçüm başlatır. **Tam konumlar** noktaları belirlediğiniz aralığa, **Yüzeye yakala** ise yakın kenar ve köşelere oturtur. `Esc` ölçümü kapatır.
 
@@ -63,7 +63,7 @@ Yeni **Kamera**, yere paralel olarak sahnenin −Z yönüne bakar. Düzenleyicid
 
 Her nesnenin kareleri kendi satırındadır. Kamera geçişleri ayrı satırda gösterilir. Kareyi sağ tıklayarak taşıyabilir, silebilir veya kopyalayabilirsiniz. Kopyalanan pozu, hedef nesne ve kareyi seçip **Kareyi yapıştır** ile uygulayın. Kamera geçişinin hedefi sağ tık menüsünden değişir.
 
-Kamera sıfırlama düğmesine sol tıklamak varsayılan görünümü açar. Sağ tıklayıp kamera seçtiğinizde o açıdan serbestçe dolaşabilirsiniz. Oynatmayı duraklatınca son kamera açısı korunur. Kamera silinirse ona ait geçiş işaretleri de kalkar. **Kamera takibi** seçilen nesnenin merkezine bakar ve takip başlarken ölçülen uzaklığı ve yönü korur. **Katı cisimlerden etkilen** açıkken kamera engel boyunca hareket edebilir ve yol açılınca takip konumuna geri döner. **Mesafeyi yeniden al** mevcut konumu yeni takip konumu olarak kullanır.
+Kamera sıfırlama düğmesine sol tıklamak varsayılan görünümü açar. Sağ tıklayıp kamera seçtiğinizde o açıdan serbestçe dolaşabilirsiniz. Görünüm değiştirirken kayma ve dönme durur. Önceki görünüme döndüğünüzde en son kaldığınız noktadan devam edersiniz. Oynatmayı duraklatınca son kamera açısı korunur. Kamera silinirse ona ait geçiş işaretleri de kalkar. **Kamera takibi** seçilen nesnenin merkezine bakar ve takip başlarken ölçülen uzaklığı ve yönü korur. **Katı cisimlerden etkilen** açıkken kamera engel boyunca hareket edebilir ve yol açılınca takip konumuna geri döner. **Mesafeyi yeniden al** mevcut konumu yeni takip konumu olarak kullanır.
 
 ## Presetler
 
@@ -71,7 +71,7 @@ Kamera sıfırlama düğmesine sol tıklamak varsayılan görünümü açar. Sa�
 
 Grup çözülürken dönüşümler çocuk nesnelere aktarılır. Grubu çözebilmek için grubun anahtar karelerini kaldırın ve üç eksendeki grup ölçeğini eşitleyin.
 
-Sahne araçlarındaki **Birleştir** düğmesi, birbirine değmeyen nesneleri de tek ağda toplar. Pozitif nesneleri birleştirdiğinizde **Orta**, kaynak nesnelerin merkezlerinin ortalamasıdır. Bu nokta iki ayrı nesne arasında boşluğa düşebilir. Birleştirme animasyonsuz nesnelerde çalışır ve renkleri korur. Seçimdeki negatif nesnelerin açtığı delikler kalıcılaşır.
+Sahne araçlarındaki **Birleştir** düğmesi, birbirine değmeyen nesneleri de tek ağda toplar. Pozitif nesneleri birleştirdiğinizde **Orta**, kaynak nesnelerin merkezlerinin ortalamasıdır. Bu nokta iki ayrı nesne arasında boşluğa düşebilir. Seçimde hareketli nesneler varsa onayınızla geçerli karedeki geometri birleştirilir ve kaynak hareketler kaldırılır. Bağımsız anahtar kareleri korumak için **Grupla** seçeneğini kullanabilirsiniz. Birleştirme renkleri korur ve negatif nesnelerin açtığı delikleri kalıcılaştırır.
 
 ## 3B model dışa aktarma
 
