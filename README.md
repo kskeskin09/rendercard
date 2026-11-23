@@ -56,7 +56,7 @@ Kaydedilmemiş proje değişiklikleri varsa Windows uygulaması çıkarken onay 
 
 ## İskelet ve doku köprüsü
 
-Nesnenin **İskelet → İskelet bağı** ayarı seçili merkezde bir nokta oluşturur. Sahnedeki kemik simgeli aracı açıp iki noktaya sırayla tıklayın veya Özellikler panelinde **Kemik oluştur** düğmesini kullanın. Kemiğe sağ tıklayıp **Doku düzeltme**yi açabilir ve yüzey genişliğini değiştirebilirsiniz. Varsayılan yüzey iki uçtan alınan malzemeleri karıştırır. Özel renk veya tile seçilebilir.
+Nesnenin **İskelet → İskelet bağı** ayarı seçili merkezde bir nokta oluşturur. Kemik oluşturmak için 3B sahnedeki kemik simgeli aracı açıp iki noktaya sırayla tıklayın. Bağlı nesnenin **İskelet bağı** seçeneğinin altında **Doku düzeltme**yi açıp yüzeyi ve genişliğini ayarlayabilirsiniz. Kemiğe sağ tıklamak bu ayarlara kısayol sağlar. Varsayılan yüzey iki uçtaki malzemeleri karıştırır. Özel renk veya tile seçilebilir.
 
 Nesneler hareket ettikçe kemik onları takip eder ve aradaki görünür boşluk için doku köprüsü yeniden hesaplanır. İskelet işaretleri düzenleme görünümünde, doku köprüsü de PNG ve video renderında görünür. Bağlantılar proje dosyasında saklanır.
 

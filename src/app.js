@@ -45,7 +45,6 @@ import { stepTimelineZoom, timelineWindow } from './timeline-window.js';
 import { applyTextEdit, isTextGroup, planLetterEntrance, planTextEdit, textGroupInfo } from './text-editing.js';
 import { applyKeyTiming, planKeyTiming } from './key-timing.js';
 import { boneDefaults, rigLinks } from './rig.js';
-import { tiles } from './tiles.js';
 import {
   axes,
   axisHeading,
@@ -102,6 +101,7 @@ let measuring = false;
 let rigMode = false;
 let firstJoint;
 let activeBone;
+const inspectorBones = new WeakMap();
 let freeViewLabel;
 let sceneName = 'Yeni sahne';
 let sceneExpanded = false;
@@ -2062,7 +2062,7 @@ $('skeleton-mode').onclick = () => {
   }
   setMeasure(false);
   setRigMode(true);
-  status('İki iskelet noktasına sırayla tıkla. Doku ayarları için kemiğe sağ tıkla.');
+  status('Kemik oluşturmak için iki iskelet noktasına sırayla tıkla.');
 };
 
 function connectBone(source, target) {
@@ -2075,7 +2075,10 @@ function connectBone(source, target) {
     return;
   }
   edit(() => {
-    source.userData.bones.push({ ...boneDefaults, target: target.userData.objectId });
+    const bone = { ...boneDefaults, target: target.userData.objectId };
+    source.userData.bones.push(bone);
+    inspectorBones.set(source, bone);
+    inspectorBones.set(target, bone);
     paintInspector();
     status(source.name + ' ile ' + target.name + ' bağlandı.');
   }, 'Kemik oluştur');
@@ -2098,17 +2101,62 @@ function bindSkeletonInspector(object) {
     status(enabled ? 'Merkeze iskelet bağı eklendi.' : 'İskelet bağı kaldırıldı.');
   }, 'İskelet bağını değiştir');
   if (!joint.checked) return;
-  const { joints, links } = rigLinks(root);
+  const { links } = rigLinks(root);
   const connected = links.filter(link => link.source === object || link.target === object);
   const otherEnd = link => link.source === object ? link.target : link.source;
-  const already = new Set(connected.map(otherEnd));
-  const targets = joints.filter(item => item !== object && !already.has(item));
-  $('skeleton-targets').hidden = !targets.length;
-  $('skeleton-target').replaceChildren(...targets.map(item => new Option(item.name, item.userData.objectId)));
-  $('connect-bone').onclick = () => connectBone(object, getObjectById($('skeleton-target').value));
-  $('skeleton-links').hidden = !connected.length;
-  $('skeleton-link').replaceChildren(...connected.map((link, index) => new Option(otherEnd(link).name, index)));
-  $('open-bone-settings').onclick = () => showBoneSettings(connected[Number($('skeleton-link').value)]);
+  const chooser = $('skeleton-link');
+  const skin = $('bone-skin');
+  const finish = $('bone-finish');
+  const color = $('bone-color');
+  const tile = $('bone-tile');
+  const tileScale = $('bone-tile-scale');
+  const ratio = $('bone-ratio');
+  $('skeleton-links').hidden = false;
+  $('skeleton-link-field').hidden = connected.length < 2;
+  $('bone-empty').hidden = connected.length > 0;
+  skin.disabled = connected.length === 0;
+  chooser.replaceChildren(...connected.map((link, index) => new Option(otherEnd(link).name, index)));
+  const existing = connected.findIndex(link => link.bone === inspectorBones.get(object));
+  chooser.value = String(Math.max(0, existing));
+  let bone;
+  function paintFields() {
+    $('bone-skin-fields').hidden = !bone?.skin;
+    $('bone-color-field').hidden = bone?.finish !== 'color';
+    $('bone-tile-field').hidden = bone?.finish !== 'tile';
+  }
+  function chooseBone() {
+    bone = connected[Number(chooser.value)]?.bone;
+    if (!bone) return;
+    inspectorBones.set(object, bone);
+    skin.checked = bone.skin;
+    finish.value = bone.finish;
+    color.value = bone.color;
+    tile.value = bone.tile;
+    tileScale.value = bone.tileScale * 100;
+    ratio.value = bone.ratio;
+    paintFields();
+  }
+  chooser.onchange = chooseBone;
+  chooseBone();
+  if (!bone) return;
+  skin.onchange = () => {
+    setBoneSkin(bone, skin.checked);
+    paintFields();
+  };
+  finish.onchange = () => edit(() => {
+    bone.finish = finish.value;
+    paintFields();
+  }, 'Kemik yüzeyini değiştir');
+  color.onchange = () => edit(() => { bone.color = color.value; }, 'Kemik rengini değiştir');
+  tile.onchange = () => edit(() => { bone.tile = tile.value; }, 'Kemik döşemesini değiştir');
+  for (const [field, property, divisor] of [[tileScale, 'tileScale', 100], [ratio, 'ratio', 1]]) {
+    field.onchange = () => {
+      if (Number.isFinite(field.valueAsNumber)) edit(() => {
+        bone[property] = MathUtils.clamp(field.valueAsNumber, Number(field.min), Number(field.max)) / divisor;
+      }, 'Kemik doku ölçüsünü değiştir');
+      field.value = bone[property] * divisor;
+    };
+  }
 }
 
 function receiveRigPick(event, hit) {
@@ -2135,52 +2183,28 @@ function receiveRigPick(event, hit) {
   return true;
 }
 
-const boneDialog = $('bone-dialog');
-$('bone-tile').replaceChildren(...Object.entries(tiles).map(([value, name]) => new Option(name, value)));
-function paintBoneFields() {
-  const finish = $('bone-finish').value;
-  $('bone-skin-fields').hidden = !$('bone-skin').checked;
-  $('bone-color-field').hidden = finish !== 'color';
-  $('bone-tile-field').hidden = finish !== 'tile';
-}
-function showBoneSettings(link) {
-  if (!link) return;
-  activeBone = link;
-  $('bone-menu').hidden = true;
-  $('bone-name').textContent = link.source.name + ' ↔ ' + link.target.name;
-  const { skin, finish, color, tile, ratio, tileScale } = link.bone;
-  $('bone-skin').checked = skin;
-  $('bone-finish').value = finish;
-  $('bone-color').value = color;
-  $('bone-ratio').value = ratio;
-  $('bone-tile').value = tile;
-  $('bone-tile-scale').value = tileScale * 100;
-  paintBoneFields();
-  boneDialog.showModal();
-}
-$('bone-skin').onchange = $('bone-finish').onchange = paintBoneFields;
-$('bone-settings').onclick = () => showBoneSettings(activeBone);
-$('close-bone-dialog').onclick = () => boneDialog.close();
-$('bone-form').onsubmit = event => {
-  event.preventDefault();
-  boneDialog.close();
-  if (!activeBone) return;
+function setBoneSkin(bone, enabled) {
   edit(() => {
-    Object.assign(activeBone.bone, {
-      skin: $('bone-skin').checked, finish: $('bone-finish').value,
-      color: $('bone-color').value, tile: $('bone-tile').value,
-      ratio: $('bone-ratio').valueAsNumber, tileScale: $('bone-tile-scale').valueAsNumber / 100
-    });
-    status('Kemik doku ayarları güncellendi.');
-  }, 'Kemik dokusunu değiştir');
+    bone.skin = enabled;
+    status(enabled ? 'Doku düzeltme açıldı.' : 'Doku düzeltme kapatıldı.');
+  }, 'Doku düzeltmeyi değiştir');
+}
+
+$('bone-settings').onclick = () => {
+  $('bone-menu').hidden = true;
+  if (!activeBone) return;
+  const { source, target, bone } = activeBone;
+  const object = single() === target ? target : source;
+  inspectorBones.set(object, bone);
+  openInspectorSections.add('İskelet');
+  select(object);
+  $('bone-skin').focus();
 };
 $('bone-toggle-skin').onclick = () => {
   $('bone-menu').hidden = true;
   if (!activeBone) return;
-  edit(() => {
-    activeBone.bone.skin = !activeBone.bone.skin;
-    status(activeBone.bone.skin ? 'Doku düzeltme açıldı.' : 'Doku düzeltme kapatıldı.');
-  }, 'Doku düzeltmeyi değiştir');
+  setBoneSkin(activeBone.bone, !activeBone.bone.skin);
+  if (single() === activeBone.source || single() === activeBone.target) paintInspector();
 };
 $('delete-bone').onclick = () => {
   $('bone-menu').hidden = true;
@@ -2570,7 +2594,7 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   if ($('render-settings-dialog').open || $('model-dialog').open || joinDialog.open ||
-      textDialog.open || textEntranceDialog.open || $('timeline-spacing-dialog').open || boneDialog.open) return;
+      textDialog.open || textEntranceDialog.open || $('timeline-spacing-dialog').open) return;
   if ($('render-preview').open) {
     if (key === ' ' && document.activeElement?.tagName !== 'BUTTON') {
       event.preventDefault();
