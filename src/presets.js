@@ -10,6 +10,7 @@ export function installPresets({
   deleteObject,
   duplicateObject,
   focusObject,
+  textActions,
   status
 }) {
   const $ = (id) => document.getElementById(id);
@@ -89,7 +90,8 @@ export function installPresets({
       status(target.value.name + ' preseti silindi.');
     }
   };
-  for (const [id, run] of [['context-duplicate', duplicateObject], ['context-focus', focusObject]]) {
+  for (const [id, run] of [['context-duplicate', duplicateObject], ['context-focus', focusObject],
+    ['context-edit-text', textActions.edit], ['context-animate-text', textActions.animate]]) {
     $(id).onclick = () => {
       $('object-menu').hidden = true;
       if (target?.kind === 'object') run(target.value);
@@ -171,6 +173,9 @@ export function installPresets({
     $('object-to-preset').hidden = kind !== 'object';
     $('context-duplicate').hidden = kind !== 'object';
     $('context-focus').hidden = kind !== 'object';
+    const hasText = kind === 'object' && textActions.matches(value);
+    $('context-edit-text').hidden = !hasText;
+    $('context-animate-text').hidden = !hasText || !value.children.some(child => child.userData.type === 'letter');
     menu.hidden = false;
     const row = event.currentTarget.getBoundingClientRect();
     const x = event.clientX || row.left;

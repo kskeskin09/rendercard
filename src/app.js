@@ -42,6 +42,8 @@ import { atmosphereColorMarkup, bindColor } from './color-editor.js';
 import { skyTiles } from './sky-texture.js';
 import { orbitPosition, orderedOrbits } from './orbit-motion.js';
 import { stepTimelineZoom, timelineWindow } from './timeline-window.js';
+import { applyTextEdit, isTextGroup, planLetterEntrance, planTextEdit, textGroupInfo } from './text-editing.js';
+import { applyKeyTiming, planKeyTiming } from './key-timing.js';
 import {
   axes,
   axisHeading,
@@ -100,6 +102,7 @@ let sceneName = 'Yeni sahne';
 let sceneExpanded = false;
 let previewStart;
 let timelineTarget;
+const selectedTimelineKeys = new Map();
 let movingKey;
 let copiedKey;
 let activePicker;
@@ -158,6 +161,8 @@ function replaceScene(state) {
   const project = decodeProject(JSON.parse(state.project));
   if (state.document) projectDocument = state.document;
   const freeCameraId = freeViewLabel?.userData.cameraId;
+  selectedTimelineKeys.clear();
+  cancelKeyMove();
   [...root.children].forEach(disposeObject);
   project.objects.forEach((object) => root.add(object));
   freeViewLabel = freeCameraId ? getCamera(freeCameraId) : undefined;
@@ -586,6 +591,8 @@ function updateTimeline() {
         timelineRows.push({ clip, keys, object });
     }
   }
+  const liveKeys = new Set(timelineRows.flatMap(row => row.keys));
+  for (const key of selectedTimelineKeys.keys()) if (!liveKeys.has(key)) selectedTimelineKeys.delete(key);
   const labels = timelineRows.map(({ clip, object, camera }) => {
     const label = document.createElement(object ? 'button' : 'span');
     const name = camera ? 'Kamera geçişleri' : object.name;
@@ -630,6 +637,8 @@ function paintTimelineWindow() {
   $('timeline-zoom-out').disabled = span === timelineWindow(duration, 0, 0).span;
   $('timeline-zoom-in').disabled = span === timelineWindow(duration, 100, 0).span;
   $('timeline-range').textContent = start + '–' + end;
+  $('timeline-selection-count').hidden = selectedTimelineKeys.size < 2;
+  $('timeline-selection-count').textContent = selectedTimelineKeys.size + ' kare seçili';
   const tickCount = Math.min(span, 8);
   $('ticks').replaceChildren(
     ...Array.from({ length: tickCount + 1 }, (_, index) => {
@@ -650,7 +659,7 @@ function paintTimelineWindow() {
           marker.style.top = 23 + lane * 20 + 'px';
           marker.style.left = timelinePercent(key.frame, range) + '%';
           marker.title = (camera ? (getCamera(key.camera)?.name ?? 'Varsayılan') : object.name) + ' · ' + key.frame;
-          bindTimelineMarker(marker, { clip: clip.id, frame: key.frame, lane, camera, object });
+          bindTimelineMarker(marker, { clip: clip.id, frame: key.frame, lane, camera, object, key });
           return marker;
         }))
   );
@@ -691,20 +700,44 @@ function timelineKeys(target) {
   return target.camera ? animations.cameraTracks?.[target.clip] ?? [] : keysFor(target.object, target.clip);
 }
 
+function timelineSelection() {
+  return [...selectedTimelineKeys].map(([key, target]) => ({ key, track: timelineKeys(target), target }));
+}
+
 function bindTimelineMarker(marker, target) {
   marker.setAttribute('aria-label', (target.camera ? 'Kamera geçişi · ' : 'Anahtar kare · ') + marker.title);
-  marker.onclick = () => {
+  marker.setAttribute('aria-pressed', String(selectedTimelineKeys.has(target.key)));
+  marker.title += ' · Ctrl veya Shift ile birden fazla kare seç';
+  marker.onclick = event => {
+    if (event.ctrlKey || event.shiftKey || event.metaKey) {
+      if (!selectedTimelineKeys.delete(target.key)) selectedTimelineKeys.set(target.key, target);
+      paintTimelineWindow();
+      return;
+    }
+    selectedTimelineKeys.clear();
+    selectedTimelineKeys.set(target.key, target);
     stopAt(target.frame);
     if (target.object && !selected.has(target.object)) select(target.object);
+    else paintTimelineWindow();
   };
   marker.oncontextmenu = event => {
     event.preventDefault();
     cancelKeyMove();
     timelineTarget = target;
+    if (!selectedTimelineKeys.has(target.key)) {
+      selectedTimelineKeys.clear();
+      selectedTimelineKeys.set(target.key, target);
+      paintTimelineWindow();
+    }
+    const multiple = selectedTimelineKeys.size > 1;
     const menu = $('timeline-menu');
-    $('timeline-camera-field').hidden = !target.camera;
-    $('timeline-copy').hidden = Boolean(target.camera);
-    if (target.camera) {
+    $('timeline-camera-field').hidden = multiple || !target.camera;
+    $('timeline-copy').hidden = multiple || Boolean(target.camera);
+    $('timeline-delete').hidden = multiple;
+    $('timeline-spacing').hidden = !multiple;
+    $('timeline-spacing').disabled = new Set([...selectedTimelineKeys.keys()].map(key => key.frame)).size < 2;
+    $('timeline-move').textContent = multiple ? 'Seçili kareleri taşı' : 'Taşı';
+    if (target.camera && !multiple) {
       const select = $('timeline-camera-change');
       select.replaceChildren(new Option('Varsayılan', ''));
       forObjects(object => {
@@ -721,7 +754,7 @@ function bindTimelineMarker(marker, target) {
 
 function cancelKeyMove() {
   if (!movingKey) return;
-  movingKey.marker.remove();
+  for (const { marker } of movingKey.markers) marker.remove();
   $('track').classList.remove('moving-key');
   movingKey = undefined;
 }
@@ -737,16 +770,66 @@ $('timeline-move').onclick = () => {
   if (!timelineTarget) return;
   $('timeline-menu').hidden = true;
   setPlaying(false);
-  const { lane, camera, frame } = timelineTarget;
-  const marker = document.createElement('span');
-  marker.className = 'key-dot moving-dot' + (camera ? ' camera-dot' : '');
-  marker.style.top = 23 + lane * 20 + 'px';
-  marker.style.left = timelinePercent(frame) + '%';
-  $('track').append(marker);
+  const entries = timelineSelection();
+  const markers = entries.map(({ key, track, target }) => {
+    const lane = timelineRows.findIndex(row => row.keys === track);
+    const marker = document.createElement('span');
+    marker.className = 'key-dot moving-dot' + (target.camera ? ' camera-dot' : '');
+    marker.style.top = 23 + lane * 20 + 'px';
+    $('track').append(marker);
+    return { marker, frame: key.frame };
+  });
   $('track').classList.add('moving-key');
-  movingKey = { target: timelineTarget, marker };
-  status('Kareyi taşımak için zaman çizelgesinde bir yere tıkla. Esc iptal eder.');
+  movingKey = { target: timelineTarget, entries, markers };
+  paintMovingKeys(timelineTarget.frame);
+  status('Taşımak için zaman çizelgesinde bir yere tıkla. Esc iptal eder.');
 };
+
+function paintMovingKeys(destination) {
+  const offset = destination - movingKey.target.frame;
+  const range = timelineWindow(duration, timelineZoom, timelineStart);
+  for (const { marker, frame } of movingKey.markers) {
+    const next = frame + offset;
+    marker.hidden = next < range.start || next > range.end;
+    marker.style.left = timelinePercent(next, range) + '%';
+  }
+}
+
+const timelineSpacingDialog = $('timeline-spacing-dialog');
+$('timeline-spacing').onclick = () => {
+  $('timeline-menu').hidden = true;
+  if (selectedTimelineKeys.size < 2) return;
+  setPlaying(false);
+  $('timeline-spacing-form').reset();
+  $('timeline-spacing-error').hidden = true;
+  timelineSpacingDialog.showModal();
+};
+$('cancel-timeline-spacing').onclick = () => timelineSpacingDialog.close();
+$('timeline-spacing-form').onsubmit = event => {
+  event.preventDefault();
+  const entries = timelineSelection();
+  const first = Math.min(...entries.map(({ key }) => key.frame));
+  const factor = $('timeline-spacing-factor').valueAsNumber;
+  let plan;
+  try {
+    plan = planKeyTiming(entries, value => first + Math.round((value - first) * factor), duration);
+  } catch (error) {
+    $('timeline-spacing-error').textContent = error.message;
+    $('timeline-spacing-error').hidden = false;
+    return;
+  }
+  timelineSpacingDialog.close();
+  commitTimelineTiming(plan, first, 'Seçili karelerin aralıklarını değiştir');
+};
+
+function commitTimelineTiming(plan, next, description) {
+  edit(() => {
+    applyKeyTiming(plan);
+    frameTo(next);
+    updateTimeline();
+  }, description);
+  status(plan.changes.length + ' karenin zamanlaması güncellendi.');
+}
 $('timeline-delete').onclick = () => {
   const target = timelineTarget;
   $('timeline-menu').hidden = true;
@@ -792,38 +875,46 @@ $('timeline-camera-change').onchange = event => {
   }, 'Geçilecek kamerayı değiştir');
 };
 document.addEventListener('pointermove', event => {
-  if (movingKey) movingKey.marker.style.left = timelinePercent(pointerFrame(event.clientX)) + '%';
+  if (movingKey) paintMovingKeys(pointerFrame(event.clientX));
 });
 document.addEventListener('pointerdown', event => {
   if (!event.target.closest('#timeline-menu')) $('timeline-menu').hidden = true;
-  if (!movingKey || event.button !== 0) return;
+  if (event.button !== 0) return;
+  if (!movingKey) {
+    if (selectedTimelineKeys.size && event.target.closest('#track') && !event.target.closest('.key-dot')) {
+      selectedTimelineKeys.clear();
+      paintTimelineWindow();
+    }
+    return;
+  }
   if (!event.target.closest('#track')) {
     cancelKeyMove();
     return;
   }
   event.preventDefault();
   event.stopImmediatePropagation();
-  const target = movingKey.target;
+  const { target, entries } = movingKey;
   const destination = pointerFrame(event.clientX);
-  const keys = timelineKeys(target);
-  if (destination !== target.frame && keys.some(key => key.frame === destination)) {
-    status('Bu konumda zaten bir kare var. Başka bir kare seç.');
+  let plan;
+  try {
+    plan = planKeyTiming(entries, value => value + destination - target.frame, duration);
+  } catch (error) {
+    status(error.message);
     return;
   }
   cancelKeyMove();
   if (destination === target.frame) return;
-  edit(() => {
-    const key = keys.find(key => key.frame === target.frame);
-    if (key) key.frame = destination;
-    keys.sort((a, b) => a.frame - b.frame);
-    frameTo(destination);
-    updateTimeline();
-  }, target.camera ? 'Kamera geçişini taşı' : 'Anahtar kareyi taşı');
+  commitTimelineTiming(plan, destination, entries.length > 1 ? 'Seçili kareleri taşı' :
+    target.camera ? 'Kamera geçişini taşı' : 'Anahtar kareyi taşı');
 }, { capture: true });
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
   $('timeline-menu').hidden = true;
-  cancelKeyMove();
+  if (movingKey) cancelKeyMove();
+  else if (selectedTimelineKeys.size && !document.querySelector('dialog[open]')) {
+    selectedTimelineKeys.clear();
+    paintTimelineWindow();
+  }
 });
 
 function getCamera(id) {
@@ -1634,6 +1725,11 @@ function showPresetScene(show) {
 }
 
 presets = installPresets({
+  textActions: {
+    matches: isTextGroup,
+    edit: object => openTextDialog(object),
+    animate: object => openTextEntrance(object)
+  },
   begin() {
     if (presetScene) return;
     setPlaying(false);
@@ -1790,19 +1886,41 @@ function addObject(type) {
 }
 
 const textDialog = $('text-dialog');
-$('add-text').onclick = () => {
+const textRemoveDialog = $('text-remove-dialog');
+const textEntranceDialog = $('text-entrance-dialog');
+let editingText;
+let pendingTextEdit;
+let entranceGroup;
+function openTextDialog(group) {
   if (recording) return;
   setPlaying(false);
+  editingText = group;
   $('text-form').reset();
   $('text-error').hidden = true;
+  $('text-title').textContent = group ? '3B Metni Düzenle' : '3B Metin Ekle';
+  $('text-submit').textContent = group ? 'Kaydet' : 'Metni ekle';
+  $('text-geometry-fields').hidden = Boolean(group);
+  $('text-content').value = group ? textGroupInfo(group).text : '';
   textDialog.showModal();
-};
+}
+$('add-text').onclick = () => openTextDialog();
 $('close-text-dialog').onclick = () => textDialog.close();
 $('text-form').onsubmit = event => {
   event.preventDefault();
+  const text = $('text-content').value;
   let group;
   try {
-    group = makeTextGroup($('text-content').value, $('text-depth').valueAsNumber, $('text-radius').valueAsNumber / 100);
+    if (editingText) {
+      const plan = planTextEdit(editingText, text);
+      if (plan.animated.length) {
+        pendingTextEdit = { group: editingText, plan };
+        $('text-remove-message').textContent = plan.animated.map(letter => letter.name).join(', ') +
+          ' harflerinin animasyonu da kaldırılacak. Devam edilsin mi?';
+        textRemoveDialog.showModal();
+      } else saveTextEdit(editingText, plan);
+      return;
+    }
+    group = makeTextGroup(text, $('text-depth').valueAsNumber, $('text-radius').valueAsNumber / 100);
   } catch (error) {
     $('text-error').textContent = error.message;
     $('text-error').hidden = false;
@@ -1824,6 +1942,89 @@ $('text-form').onsubmit = event => {
   }, '3B metin ekle');
 };
 
+function saveTextEdit(group, plan) {
+  textDialog.close();
+  edit(() => {
+    applyTextEdit(group, plan);
+    clearObjectTargets(new Set(plan.removed.map(letter => letter.userData.objectId)));
+    updateSceneVisibility();
+    if (settleObject(group) === false) return false;
+    setWireframe(wireframe);
+    select(group);
+    status('3B metin güncellendi.');
+  }, '3B metni düzenle');
+}
+
+$('cancel-text-remove').onclick = () => textRemoveDialog.close();
+$('text-remove-form').onsubmit = event => {
+  event.preventDefault();
+  const { group, plan } = pendingTextEdit;
+  textRemoveDialog.close();
+  saveTextEdit(group, plan);
+};
+textRemoveDialog.addEventListener('close', () => { pendingTextEdit = undefined; });
+
+const entranceAmounts = {
+  move: ['Yükselme mesafesi', 0.1, 100, 0.75, 'any'],
+  rotate: ['Dönüş açısı (°)', 1, 179, 90, 'any'],
+  grow: ['Başlangıç boyutu (%)', 1, 99, 10, 'any']
+};
+function paintEntranceAmount() {
+  const [label, min, max, value, step] = entranceAmounts[$('text-entrance-mode').value];
+  $('text-entrance-amount-label').textContent = label;
+  Object.assign($('text-entrance-amount'), { min, max, value, step });
+}
+function openTextEntrance(group) {
+  if (recording) return;
+  setPlaying(false);
+  entranceGroup = group;
+  $('text-entrance-form').reset();
+  $('text-entrance-start').value = frame;
+  $('text-entrance-error').hidden = true;
+  paintEntranceAmount();
+  textEntranceDialog.showModal();
+}
+$('text-entrance-mode').onchange = paintEntranceAmount;
+$('cancel-text-entrance').onclick = () => textEntranceDialog.close();
+$('text-entrance-form').onsubmit = event => {
+  event.preventDefault();
+  const read = field => $('text-entrance-' + field).valueAsNumber;
+  const clip = animations.active;
+  const start = read('start');
+  let plan;
+  try {
+    plan = planLetterEntrance(entranceGroup, {
+      clip, start, gap: read('gap'), span: read('span'),
+      mode: $('text-entrance-mode').value, amount: read('amount')
+    });
+  } catch (error) {
+    $('text-entrance-error').textContent = error.message;
+    $('text-entrance-error').hidden = false;
+    return;
+  }
+  textEntranceDialog.close();
+  edit(() => {
+    for (const { letter, from, to, entrance, rest } of plan.entries) {
+      writeKey(letter, from, clip, entrance);
+      writeKey(letter, to, clip, rest);
+    }
+    duration = Math.max(duration, plan.end);
+    frameTo(start);
+    select(entranceGroup);
+    status(plan.entries.length + ' harfin giriş animasyonu eklendi.');
+  }, 'Sıralı harf animasyonu ekle');
+};
+
+function clearObjectTargets(removedObjects) {
+  forObjects(object => {
+    if (removedObjects.has(object.userData.followTarget)) {
+      object.userData.followTarget = null;
+      object.userData.followOffset = null;
+    }
+    if (removedObjects.has(object.userData.orbit.target)) object.userData.orbit.target = null;
+  });
+}
+
 function deleteSelection() {
   if (!selected.size) return;
   setPlaying(false);
@@ -1841,13 +2042,7 @@ function deleteSelection() {
   if (removedCameras.has(freeViewLabel?.userData.cameraId)) freeViewLabel = undefined;
   const parents = new Set(targets.map((object) => object.parent));
   targets.forEach(disposeObject);
-  forObjects(object => {
-    if (removedObjects.has(object.userData.followTarget)) {
-      object.userData.followTarget = null;
-      object.userData.followOffset = null;
-    }
-    if (removedObjects.has(object.userData.orbit.target)) object.userData.orbit.target = null;
-  });
+  clearObjectTargets(removedObjects);
   for (const parent of parents) {
     if (parent === root) continue;
     fitPivot(parent);
@@ -2186,7 +2381,8 @@ window.addEventListener('keydown', (event) => {
     }
     return;
   }
-  if ($('render-settings-dialog').open || $('model-dialog').open || joinDialog.open || textDialog.open) return;
+  if ($('render-settings-dialog').open || $('model-dialog').open || joinDialog.open ||
+      textDialog.open || textEntranceDialog.open || $('timeline-spacing-dialog').open) return;
   if ($('render-preview').open) {
     if (key === ' ' && document.activeElement?.tagName !== 'BUTTON') {
       event.preventDefault();

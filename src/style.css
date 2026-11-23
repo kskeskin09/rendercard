@@ -591,6 +591,8 @@ kbd {
   background: #779725;
   transform: rotate(45deg);
 }
+.key-dot[aria-pressed='true'] { outline: 2px solid #415c13; background: #f4ffce; z-index: 2; }
+#timeline-selection-count { color: #415c13; font-weight: 600; }
 .key-dot.moving-dot {
   display: grid;
   place-items: center;

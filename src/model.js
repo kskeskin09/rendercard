@@ -69,7 +69,7 @@ export const types = {
   camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 14;
+export const projectVersion = 15;
 export const shapeSides = [3, 4, 5, 6, 8, 16, 32, 64];
 export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid'].includes(type);
 const channels = ['position', 'rotation', 'scale'];
@@ -235,15 +235,23 @@ function configureMesh(object) {
 export function makeTextGroup(text, depth = defaultLetterDepth, radius = 0) {
   const layout = letterLayout(text);
   const name = text.trim().replace(/\s+/g, ' ').slice(0, 72);
-  const group = makeObject('group', name);
-  for (const { glyph, x, y } of layout) {
-    const letter = makeObject('letter', glyph, undefined, undefined, { glyph, letterDepth: depth, radius });
-    letter.position.set(x, y, 0);
-    group.add(letter);
-    fitPivot(letter);
-  }
+  const group = makeObject('group', name, undefined, undefined, {
+    textLayout: { text: text.trim(), depth, radius, origin: [0, 0, 0] }
+  });
+  for (const slot of layout) addTextLetter(group, slot, depth, radius);
   fitPivot(group);
   return group;
+}
+
+export function addTextLetter(group, { glyph, x, y }, depth, radius) {
+  const slot = [x, y, 0];
+  const letter = makeObject('letter', glyph, undefined, undefined, {
+    glyph, letterDepth: depth, radius, textSlot: slot
+  });
+  letter.position.fromArray(group.userData.textLayout.origin).add(new Vector3(x, y, 0));
+  group.add(letter);
+  fitPivot(letter);
+  return letter;
 }
 
 export function configurePointLight(light) {
@@ -268,7 +276,9 @@ export function makeObject(
   if (type === 'letter') {
     settings.glyph = data.glyph;
     settings.letterDepth = data.letterDepth ?? defaultLetterDepth;
+    if (data.textSlot) settings.textSlot = structuredClone(data.textSlot);
   }
+  if (type === 'group' && data?.textLayout) settings.textLayout = structuredClone(data.textLayout);
   const object =
     type === 'group'
       ? new Group()
@@ -751,6 +761,13 @@ export function decodeProject(project) {
         (!Array.isArray(data.parts) ||
           data.parts.length < 1 ||
           !data.parts.every(validPart))) ||
+      (data.textLayout != null && (data.type !== 'group' ||
+        typeof data.textLayout.text !== 'string' || data.textLayout.text.length > 240 ||
+        !numericTuple(data.textLayout.origin) || !Number.isFinite(data.textLayout.depth) ||
+        data.textLayout.depth < 0.01 || data.textLayout.depth > 5 ||
+        !Number.isFinite(data.textLayout.radius) || data.textLayout.radius < 0 ||
+        data.textLayout.radius > maximumLetterRadius)) ||
+      (data.textSlot != null && (data.type !== 'letter' || !numericTuple(data.textSlot))) ||
       (data.type === 'letter' &&
         (!isLetter(data.glyph) || !/^#[0-9a-f]{6}$/i.test(data.color) ||
           !Number.isFinite(data.letterDepth) || data.letterDepth < 0.01 || data.letterDepth > 5 ||
@@ -787,7 +804,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, projectVersion].includes(project?.version) ||
     (project.renderSize != null && !validRenderSize(project.renderSize)) ||
     (project.name != null && (typeof project.name !== 'string' || project.name.length > 80 || !project.name.trim())) ||
     !validFrame(project.duration) ||

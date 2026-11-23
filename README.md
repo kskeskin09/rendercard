@@ -40,6 +40,7 @@ Kaydedilmemiş proje değişiklikleri varsa Windows uygulaması çıkarken onay 
 ## Şekil ve yerleşim
 
 - **3B Metin** ile sahneye yazı ekleyin ve ekleme penceresinde kalınlık ile kenar yumuşatmayı ayarlayın. Her ekleme ayrı grup oluşturur. Sahne listesindeki **+** ve **−** grubun harflerini açar veya kapatır. Harfi seçip **Geometri** bölümünden kalınlığını ve yumuşatmasını yeniden ayarlayabilirsiniz. Konum, dönüş ve boyut için grubun veya tek harfin karelerini oluşturabilirsiniz.
+- Metin grubuna sağ tıklayıp **Metni düzenle** ile yazıyı değiştirin. Eşleşen harflerin ayarları ve kareleri korunur. Kaldırılan harfin animasyonu varsa onay istenir. **Harfleri sırayla canlandır** seçeneğiyle yükselme, dönüş veya büyüme kareleri oluşturun. Başlangıç karesini, harfler arasındaki gecikmeyi ve her harfin hareket süresini belirleyebilirsiniz.
 - Tek cismi boyutlandırma tutamacı karşı kenarı sabit tutar. Sürüklerken **Shift** iki kenarı eşit miktarda değiştirir. Sayısal **Boyut** alanı seçili merkez noktasını sabit tutar. Çoklu seçimde **Shift** ile sürüklemek cisimleri ortak orta noktaya göre taşır, döndürür veya boyutlandırır. Zincir, sayısal boyutların X, Y ve Z oranını korur.
 - **Yerleşim** bölümünde üç eksenin merkez noktasını ayrı seçin. Merkez seçimi modelin sahnedeki yerini korur ve konum alanları seçilen yeni noktayı gösterir. **Hizala** komutları ilk seçilen nesnenin merkezini referans alır. Bu nesne listede daha koyu işaretlenir. **Sahne** listesi kapalı başlar ve açılana kadar yalnızca seçili nesneleri gösterir.
 - **Zemine bitiştir**, en uç kenarı veya seçili merkez noktasını zemine taşır. **Katılık**, taşıma sırasında yüzeyde durdurur. Açarken bir çakışma varsa nesnelerin adlarını gösterir ve sahneyi yerinde bırakır.
@@ -68,6 +69,8 @@ Dönüşte **Kısa yol** veya **Uzun yol** yönelimi izler. **X, Y, Z açıları
 Yeni **Kamera**, yere paralel olarak sahnenin −Z yönüne bakar. Düzenleyicide kamera gövdesi ve baktığı yönde saydam bir çerçeve görünür. Düzenleme bakışı bir kameraya yaklaştığında o kameranın işaretçisi gizlenir ve uzaklaşınca geri görünür. Zaman çizelgesindeki **Kamera → Bu karede geç** komutu seçili animasyona kesme ekler. Oynatma ve dışa aktarma ilgili karedeki kamerayı kullanır.
 
 Her nesnenin kareleri kendi satırındadır. Kamera geçişleri ayrı satırda gösterilir. Kareyi sağ tıklayarak taşıyabilir, silebilir veya kopyalayabilirsiniz. Kopyalanan pozu, hedef nesne ve kareyi seçip **Kareyi yapıştır** ile uygulayın. Kamera geçişinin hedefi sağ tık menüsünden değişir.
+
+**Ctrl** veya **Shift** ile birden çok kareyi işaretleyin. Seçili bir kareye sağ tıklayıp **Seçili kareleri taşı** ile göreli zamanlamayı koruyarak hepsini taşıyın. **Kare aralıklarını değiştir** ilk kareyi sabit tutar ve diğer karelerin ona uzaklığını verdiğiniz çarpanla değiştirir. Hedefler animasyon süresini aşarsa veya aynı satırda çakışırsa işlem uygulanmaz.
 
 Zaman çizelgesindeki **Hız** yalnızca düzenleyici oynatmasını etkiler. Bir seferde en fazla 240 karelik aralık görünür. **+** ve **−** kare aralığını yakınlaştırır veya uzaklaştırır. Tüm çizelge görünmediğinde alt kaydırıcı veya çizelge üzerindeki tekerlekle zamanı kaydırın. Dikey şerit kaydırması için şerit adlarının üzerinde tekerleği veya çizelgede Shift ile tekerleği kullanın.
 

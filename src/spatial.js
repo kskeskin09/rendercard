@@ -91,6 +91,10 @@ export function fitPivot(object) {
       .sub(delta)
       .toArray();
   } else {
+    if (object.userData.textLayout) {
+      const { origin } = object.userData.textLayout;
+      object.userData.textLayout.origin = new Vector3().fromArray(origin).sub(delta).toArray();
+    }
     for (const child of object.children) {
       child.position.sub(delta);
       for (const key of posesOf(child)) {

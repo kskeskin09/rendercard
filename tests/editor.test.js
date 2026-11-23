@@ -941,3 +941,62 @@ test('imported OBJ material groups survive project serialization', async () => {
   assert.equal(loaded.geometry.index.count, 3);
   assert.equal(loaded.material[0].color.getHexString(), '637ec4');
 });
+
+test('editing text preserves letter identities, animated offsets and title customization', async () => {
+  const { applyTextEdit, planTextEdit } = await import('../src/text-editing.js');
+  const root = new Group();
+  const word = makeTextGroup('ABA');
+  root.add(word);
+  word.name = 'Başlık';
+  const [first, middle, last] = word.children;
+  middle.material.color.set('#ff0000');
+  writeKey(middle, 2);
+  middle.position.y += 1;
+  middle.rotation.z = 0.8;
+  writeKey(middle, 12);
+  writeKey(last, 0);
+  const plan = planTextEdit(word, 'XAB');
+  assert.deepEqual(plan.animated, [last]);
+  applyTextEdit(word, plan);
+  assert.equal(word.name, 'Başlık');
+  assert.deepEqual(word.children.map(letter => letter.userData.glyph), [...'XAB']);
+  assert.equal(word.children[1], first);
+  assert.equal(word.children[2], middle);
+  assert.equal(middle.material.color.getHexString(), 'ff0000');
+  assert.equal(middle.userData.keys[1].rotation[2], 0.8);
+  close(middle.userData.keys[1].position[1] - middle.userData.keys[0].position[1], 1);
+  const [saved] = decodeProject(encodeProject(root, 120)).objects;
+  assert.equal(saved.userData.textLayout.text, 'XAB');
+  assert.deepEqual(saved.children[2].userData.textSlot, middle.userData.textSlot);
+});
+
+test('staggered entrance writes independent times and detects occupied frames', async () => {
+  const { planLetterEntrance } = await import('../src/text-editing.js');
+  const word = makeTextGroup('Çay');
+  const settings = { clip: 'main', start: 10, gap: 3, span: 8, mode: 'grow', amount: 20 };
+  const { entries, end } = planLetterEntrance(word, settings);
+  assert.equal(end, 24);
+  assert.deepEqual(entries.map(entry => [entry.from, entry.to]), [[10,18], [13,21], [16,24]]);
+  entries.forEach(({ letter, from, to, entrance, rest }) => {
+    assert.deepEqual(entrance.scale, [0.2, 0.2, 0.2]);
+    writeKey(letter, from, 'main', entrance);
+    writeKey(letter, to, 'main', rest);
+  });
+  assert.throws(() => planLetterEntrance(word, settings), /aralığında kare var/);
+});
+
+test('timing changes are atomic and allow simultaneous keys on separate tracks', async () => {
+  const { applyKeyTiming, planKeyTiming } = await import('../src/key-timing.js');
+  const a = { frame: 10, scale: [2, 1, 1] }, b = { frame: 15 }, c = { frame: 20 }, d = { frame: 35 };
+  const track = [a,b,d], otherTrack = [c];
+  const entries = [{ key: a, track }, { key: b, track }, { key: c, track: otherTrack }];
+  assert.throws(() => planKeyTiming(entries, frame => frame + 20, 60), /aynı konuma/);
+  assert.deepEqual(track.map(key => key.frame), [10,15,35]);
+  assert.throws(() => planKeyTiming(entries, frame => frame - 11, 60), /aralığının dışına/);
+  applyKeyTiming(planKeyTiming(entries, frame => frame + 10, 60));
+  assert.deepEqual(track.map(key => key.frame), [20,25,35]);
+  applyKeyTiming(planKeyTiming(entries, frame => 20 + (frame - 20) * 2, 60));
+  assert.deepEqual(track.map(key => key.frame), [20,30,35]);
+  assert.equal(c.frame, 40);
+  assert.deepEqual(a.scale, [2,1,1]);
+});

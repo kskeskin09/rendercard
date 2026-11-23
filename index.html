@@ -482,6 +482,7 @@
               <input id="duration" type="number" min="1" max="1800" value="120"
             /></label>
             <span>30 FPS</span>
+            <output id="timeline-selection-count" hidden></output>
             <button id="paste-key" class="quiet" hidden title="Seçili nesneye ve geçerli kareye yapıştır">Kareyi yapıştır</button>
           </div>
         </section>
@@ -505,6 +506,8 @@
       <button id="context-rename">Yeniden adlandır</button>
       <button id="context-duplicate">Çoğalt</button>
       <button id="context-focus">Odakla</button>
+      <button id="context-edit-text" hidden>Metni düzenle</button>
+      <button id="context-animate-text" hidden>Harfleri sırayla canlandır</button>
       <button id="context-delete">Sil</button>
     </div>
     <div id="view-camera-menu" class="menu object-menu" hidden></div>
@@ -512,7 +515,7 @@
       <form id="text-form">
         <h3 id="text-title">3B Metin Ekle</h3>
         <label class="field">Metin<textarea id="text-content" rows="3" maxlength="120" required autofocus></textarea></label>
-        <div class="text-geometry-fields">
+        <div id="text-geometry-fields" class="text-geometry-fields">
           <label class="field">Kalınlık<input id="text-depth" type="number" min="0.01" max="5" step="0.01" value="0.2" required></label>
           <label class="field" title="Harf yüzeyiyle yan duvarın birleşimini yuvarlatır.">Kenar yumuşatma (%)<input id="text-radius" type="number" min="0" max="4" step="0.5" value="0" required></label>
         </div>
@@ -520,7 +523,34 @@
         <p id="text-error" class="text-error" role="alert" hidden></p>
         <div class="dialog-actions">
           <button id="close-text-dialog" type="button">Vazgeç</button>
-          <button class="primary" type="submit">Metni ekle</button>
+          <button id="text-submit" class="primary" type="submit">Metni ekle</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="text-remove-dialog" class="export-dialog" aria-labelledby="text-remove-title">
+      <form id="text-remove-form">
+        <h2 id="text-remove-title">Animasyonlu harfleri kaldır</h2>
+        <p id="text-remove-message"></p>
+        <div class="dialog-actions">
+          <button id="cancel-text-remove" class="quiet" type="button" autofocus>Vazgeç</button>
+          <button class="primary" type="submit">Kaldır ve kaydet</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="text-entrance-dialog" class="export-dialog" aria-labelledby="text-entrance-title">
+      <form id="text-entrance-form">
+        <h2 id="text-entrance-title">Harfleri sırayla canlandır</h2>
+        <label class="field">Giriş hareketi<select id="text-entrance-mode"><option value="move">Yüksel</option><option value="rotate">Dön</option><option value="grow">Büyü</option></select></label>
+        <div class="text-geometry-fields">
+          <label class="field">Başlangıç karesi<input id="text-entrance-start" type="number" min="0" max="1800" required></label>
+          <label class="field">Harf aralığı (kare)<input id="text-entrance-gap" type="number" min="1" max="1800" value="3" required></label>
+          <label class="field">Harf başına süre (kare)<input id="text-entrance-span" type="number" min="1" max="1800" value="12" required></label>
+          <label class="field"><span id="text-entrance-amount-label">Yükselme mesafesi</span><input id="text-entrance-amount" type="number" required></label>
+        </div>
+        <p id="text-entrance-error" class="text-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="cancel-text-entrance" class="quiet" type="button">Vazgeç</button>
+          <button class="primary" type="submit">Kareleri oluştur</button>
         </div>
       </form>
     </dialog>
@@ -568,9 +598,22 @@
     <div id="timeline-menu" class="menu object-menu" hidden>
       <label id="timeline-camera-field" class="field">Geçilecek kamera<select id="timeline-camera-change"></select></label>
       <button id="timeline-move">Taşı</button>
+      <button id="timeline-spacing" hidden>Kare aralıklarını değiştir</button>
       <button id="timeline-copy">Kopyala</button>
       <button id="timeline-delete">Sil</button>
     </div>
+    <dialog id="timeline-spacing-dialog" class="export-dialog" aria-labelledby="timeline-spacing-title">
+      <form id="timeline-spacing-form">
+        <h2 id="timeline-spacing-title">Kare aralıklarını değiştir</h2>
+        <p class="selection-tip">İlk kare sabit kalır. Örneğin 2, diğer karelerin bu kareye olan uzaklığını iki katına çıkarır.</p>
+        <label class="field">Aralık çarpanı<input id="timeline-spacing-factor" type="number" min="0.05" max="20" step="any" required value="2" autofocus></label>
+        <p id="timeline-spacing-error" class="text-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="cancel-timeline-spacing" class="quiet" type="button">Vazgeç</button>
+          <button class="primary" type="submit">Uygula</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="render-preview" aria-labelledby="render-preview-title">
       <div class="render-preview-heading">
         <h2 id="render-preview-title">Render önizlemesi</h2>
