@@ -1,8 +1,9 @@
 import {
   Box3, BufferGeometry, Color, DataTexture, DoubleSide, Float32BufferAttribute,
-  LinearFilter, Mesh, MeshStandardMaterial, Raycaster, SRGBColorSpace, Vector3
+  LinearFilter, Mesh, MeshStandardMaterial, Raycaster, RepeatWrapping, SRGBColorSpace, Vector3
 } from 'three';
 import { applyTile } from './tiles.js';
+import { boxBridge, isBoxEnd } from './box-bridge.js';
 
 export const boneDefaults = { skin: false, finish: 'blend', color: '#b8a8f3', tile: 'checker', ratio: 100, tileScale: 1 };
 
@@ -85,6 +86,7 @@ function ringFor(meshes, pivot, facing, radial, ratio) {
 export function boneSurface(source, target, ratio, endpoints = [skinMeshes(source), skinMeshes(target)]) {
   const [left, right] = endpoints;
   if (!left.length || !right.length) return null;
+  if (isBoxEnd(left) && isBoxEnd(right)) return boxBridge(left[0], right[0], ratio);
   const a = source.getWorldPosition(new Vector3());
   const b = target.getWorldPosition(new Vector3());
   const axis = b.clone().sub(a);
@@ -163,6 +165,7 @@ export function boneMaterial(bone, { materials, length }) {
     material.color.set('#ffffff');
     material.map = new DataTexture(pixels, size, size);
     material.map.colorSpace = SRGBColorSpace;
+    material.map.wrapS = RepeatWrapping;
     material.map.magFilter = material.map.minFilter = LinearFilter;
     material.map.needsUpdate = true;
     material.transparent = (a?.opacity ?? 1) < 1 || (b?.opacity ?? 1) < 1;

@@ -45,6 +45,7 @@ import { stepTimelineZoom, timelineWindow } from './timeline-window.js';
 import { applyTextEdit, isTextGroup, planLetterEntrance, planTextEdit, textGroupInfo } from './text-editing.js';
 import { applyKeyTiming, planKeyTiming } from './key-timing.js';
 import { boneDefaults, rigLinks } from './rig.js';
+import { tiles } from './tiles.js';
 import {
   axes,
   axisHeading,
@@ -97,11 +98,8 @@ const inspectorPositions = new WeakMap();
 let paintedInspector;
 let previewCamera = false;
 let cameraOverride;
-let measuring = false;
-let rigMode = false;
 let firstJoint;
 let activeBone;
-const inspectorBones = new WeakMap();
 let freeViewLabel;
 let sceneName = 'Yeni sahne';
 let sceneExpanded = false;
@@ -168,8 +166,7 @@ function replaceScene(state) {
   const freeCameraId = freeViewLabel?.userData.cameraId;
   selectedTimelineKeys.clear();
   cancelKeyMove();
-  firstJoint = activeBone = undefined;
-  view?.setRigMode(rigMode);
+  setRigAnchor();
   [...root.children].forEach(disposeObject);
   project.objects.forEach((object) => root.add(object));
   freeViewLabel = freeCameraId ? getCamera(freeCameraId) : undefined;
@@ -509,11 +506,17 @@ function select(object, extend = false) {
 function setMode(next) {
   if (next === 'scale' && (single()?.isCamera || single()?.isLight))
     next = 'select';
+  const previous = mode;
   mode = next;
+  if (previous !== mode) {
+    if (previous === 'rig') setRigAnchor();
+    else if (mode === 'rig') view?.setRigMode(true);
+    if (previous === 'measure' || mode === 'measure') view?.setMeasuring(mode === 'measure');
+  }
   all('[data-mode]').forEach((button) =>
     button.setAttribute('aria-pressed', button.dataset.mode === mode)
   );
-  view?.updateSelection(single(), mode, independentSelection());
+  view?.updateSelection(single(), modes.includes(mode) ? mode : 'select', independentSelection());
 }
 
 for (const element of all('[data-icon]'))
@@ -553,7 +556,7 @@ function playingRate() {
 
 function setPlaying(value) {
   if (value && animations.enabled.length === 0) return;
-  if (value && measuring) setMeasure(false);
+  if (value && mode === 'measure') setMeasure(false);
   if (playing && !value && previewStart === undefined) {
     const camera = getCamera(cameraAt(animations, frame));
     if (camera) jumpToCamera(camera);
@@ -1224,7 +1227,7 @@ document.addEventListener('rendercard-color-mode', (event) => {
 
 function pickSceneColor(callback, button) {
   setPlaying(false);
-  if (measuring) setMeasure(false);
+  if (mode === 'measure') setMeasure(false);
   if (activePicker && activePicker !== button) view?.pickColor(undefined);
   activePicker = button;
   const active = view?.toggleColor(callback);
@@ -1238,17 +1241,15 @@ function pickSceneColor(callback, button) {
 
 function setMeasure(active) {
   if (!view) return;
+  if (!active && mode !== 'measure') return;
   if (active) {
     setPlaying(false);
     if (previewCamera) jumpToCamera(getCamera(cameraOverride ?? cameraAt(animations, frame)));
   }
-  measuring = active;
-  view.setMeasuring(active);
-  $('measure').setAttribute('aria-pressed', String(active));
+  setMode(active ? 'measure' : 'select');
   updateCameraView();
   status(active ? 'Ölçmek için ilk noktayı seç. Esc ölçümü kapatır.' : 'Mesafe ölçümü kapatıldı.');
 }
-$('measure').onclick = () => setMeasure(!measuring);
 
 const fogPalette = $('fog-palette');
 fogPalette.innerHTML = atmosphereColorMarkup('fog-', 'Sis rengi');
@@ -1759,7 +1760,7 @@ presets = installPresets({
     };
     history = createHistory();
     presetScene.initialRevision = history.revision;
-    mode = 'select';
+    setMode('select');
     replaceScene({
       project: JSON.stringify({
         version: projectVersion,
@@ -1779,9 +1780,9 @@ presets = installPresets({
     const previous = presetScene;
     presetScene = undefined;
     history = previous.history;
-    mode = previous.mode;
     setPlaying(false);
     replaceScene(previous.scene);
+    setMode(previous.mode);
     if (previous.camera) view?.restoreCamera(previous.camera);
     showPresetScene(false);
     if (!saved) status('Preset oluşturma iptal edildi.');
@@ -2036,7 +2037,7 @@ $('text-entrance-form').onsubmit = event => {
 };
 
 function clearObjectTargets(removedObjects) {
-  if (removedObjects.has(firstJoint?.userData.objectId)) setRigMode(rigMode);
+  if (removedObjects.has(firstJoint?.userData.objectId)) setRigAnchor();
   forObjects(object => {
     object.userData.bones = object.userData.bones.filter(bone => !removedObjects.has(bone.target));
     if (removedObjects.has(object.userData.followTarget)) {
@@ -2047,23 +2048,14 @@ function clearObjectTargets(removedObjects) {
   });
 }
 
-function setRigMode(value, joint) {
-  rigMode = value;
+function setRigAnchor(joint) {
   firstJoint = joint;
-  $('skeleton-mode').setAttribute('aria-pressed', String(value));
-  view?.setRigMode(value, joint);
-}
-
-$('skeleton-mode').onclick = () => {
-  setPlaying(false);
-  if (rigMode) {
-    setRigMode(false);
-    return;
+  if (!joint) {
+    activeBone = undefined;
+    $('bone-menu').hidden = true;
   }
-  setMeasure(false);
-  setRigMode(true);
-  status('Kemik oluşturmak için iki iskelet noktasına sırayla tıkla.');
-};
+  view?.setRigMode(mode === 'rig', joint);
+}
 
 function connectBone(source, target) {
   if (!source?.userData.skeletonJoint || !target?.userData.skeletonJoint || source === target) return;
@@ -2075,11 +2067,7 @@ function connectBone(source, target) {
     return;
   }
   edit(() => {
-    const bone = { ...boneDefaults, target: target.userData.objectId };
-    source.userData.bones.push(bone);
-    inspectorBones.set(source, bone);
-    inspectorBones.set(target, bone);
-    paintInspector();
+    source.userData.bones.push({ ...boneDefaults, target: target.userData.objectId });
     status(source.name + ' ile ' + target.name + ' bağlandı.');
   }, 'Kemik oluştur');
 }
@@ -2095,72 +2083,15 @@ function bindSkeletonInspector(object) {
       forObjects(other => {
         other.userData.bones = other.userData.bones.filter(bone => bone.target !== object.userData.objectId);
       });
-      if (firstJoint === object) setRigMode(rigMode);
+      if (firstJoint === object) setRigAnchor();
     }
     paintInspector();
     status(enabled ? 'Merkeze iskelet bağı eklendi.' : 'İskelet bağı kaldırıldı.');
   }, 'İskelet bağını değiştir');
-  if (!joint.checked) return;
-  const { links } = rigLinks(root);
-  const connected = links.filter(link => link.source === object || link.target === object);
-  const otherEnd = link => link.source === object ? link.target : link.source;
-  const chooser = $('skeleton-link');
-  const skin = $('bone-skin');
-  const finish = $('bone-finish');
-  const color = $('bone-color');
-  const tile = $('bone-tile');
-  const tileScale = $('bone-tile-scale');
-  const ratio = $('bone-ratio');
-  $('skeleton-links').hidden = false;
-  $('skeleton-link-field').hidden = connected.length < 2;
-  $('bone-empty').hidden = connected.length > 0;
-  skin.disabled = connected.length === 0;
-  chooser.replaceChildren(...connected.map((link, index) => new Option(otherEnd(link).name, index)));
-  const existing = connected.findIndex(link => link.bone === inspectorBones.get(object));
-  chooser.value = String(Math.max(0, existing));
-  let bone;
-  function paintFields() {
-    $('bone-skin-fields').hidden = !bone?.skin;
-    $('bone-color-field').hidden = bone?.finish !== 'color';
-    $('bone-tile-field').hidden = bone?.finish !== 'tile';
-  }
-  function chooseBone() {
-    bone = connected[Number(chooser.value)]?.bone;
-    if (!bone) return;
-    inspectorBones.set(object, bone);
-    skin.checked = bone.skin;
-    finish.value = bone.finish;
-    color.value = bone.color;
-    tile.value = bone.tile;
-    tileScale.value = bone.tileScale * 100;
-    ratio.value = bone.ratio;
-    paintFields();
-  }
-  chooser.onchange = chooseBone;
-  chooseBone();
-  if (!bone) return;
-  skin.onchange = () => {
-    setBoneSkin(bone, skin.checked);
-    paintFields();
-  };
-  finish.onchange = () => edit(() => {
-    bone.finish = finish.value;
-    paintFields();
-  }, 'Kemik yüzeyini değiştir');
-  color.onchange = () => edit(() => { bone.color = color.value; }, 'Kemik rengini değiştir');
-  tile.onchange = () => edit(() => { bone.tile = tile.value; }, 'Kemik döşemesini değiştir');
-  for (const [field, property, divisor] of [[tileScale, 'tileScale', 100], [ratio, 'ratio', 1]]) {
-    field.onchange = () => {
-      if (Number.isFinite(field.valueAsNumber)) edit(() => {
-        bone[property] = MathUtils.clamp(field.valueAsNumber, Number(field.min), Number(field.max)) / divisor;
-      }, 'Kemik doku ölçüsünü değiştir');
-      field.value = bone[property] * divisor;
-    };
-  }
 }
 
 function receiveRigPick(event, hit) {
-  if (event.button === 2 && hit.link) {
+  if (event.button === 2 && hit?.link) {
     activeBone = hit.link;
     $('object-menu').hidden = true;
     const menu = $('bone-menu');
@@ -2171,40 +2102,66 @@ function receiveRigPick(event, hit) {
     $('bone-toggle-skin').focus();
     return true;
   }
-  if (!hit.joint) return false;
-  if (!firstJoint || firstJoint === hit.joint) {
-    select(hit.joint);
-    setRigMode(true, hit.joint);
-    status('Bağlamak için ikinci iskelet noktasına tıkla.');
+  if (event.button !== 0) return false;
+  const joint = hit?.joint;
+  const origin = firstJoint;
+  setRigAnchor(joint);
+  select(joint);
+  if (!joint) status('Yeni bir bağlantı başlatmak için bir iskelet noktasına tıkla.');
+  else if (origin && origin !== joint) {
+    connectBone(origin, joint);
   } else {
-    connectBone(firstJoint, hit.joint);
-    setRigMode(true);
+    status('Önizlemek için başka bir iskelet noktasının üzerine gel. Bağlamak için tıkla.');
   }
   return true;
 }
 
-function setBoneSkin(bone, enabled) {
-  edit(() => {
-    bone.skin = enabled;
-    status(enabled ? 'Doku düzeltme açıldı.' : 'Doku düzeltme kapatıldı.');
-  }, 'Doku düzeltmeyi değiştir');
+const boneDialog = $('bone-dialog');
+$('bone-tile').replaceChildren(...Object.entries(tiles).map(([value, name]) => new Option(name, value)));
+function paintBoneFields() {
+  const finish = $('bone-finish').value;
+  $('bone-skin-fields').hidden = !$('bone-skin').checked;
+  $('bone-color-field').hidden = finish !== 'color';
+  $('bone-tile-field').hidden = finish !== 'tile';
 }
-
-$('bone-settings').onclick = () => {
+function showBoneSettings(link) {
+  if (!link) return;
+  activeBone = link;
   $('bone-menu').hidden = true;
+  $('bone-name').textContent = link.source.name + ' ↔ ' + link.target.name;
+  const { skin, finish, color, tile, ratio, tileScale } = link.bone;
+  $('bone-skin').checked = skin;
+  $('bone-finish').value = finish;
+  $('bone-color').value = color;
+  $('bone-ratio').value = ratio;
+  $('bone-tile').value = tile;
+  $('bone-tile-scale').value = tileScale * 100;
+  paintBoneFields();
+  boneDialog.showModal();
+}
+$('bone-skin').onchange = $('bone-finish').onchange = paintBoneFields;
+$('bone-settings').onclick = () => showBoneSettings(activeBone);
+$('close-bone-dialog').onclick = () => boneDialog.close();
+$('bone-form').onsubmit = event => {
+  event.preventDefault();
+  boneDialog.close();
   if (!activeBone) return;
-  const { source, target, bone } = activeBone;
-  const object = single() === target ? target : source;
-  inspectorBones.set(object, bone);
-  openInspectorSections.add('İskelet');
-  select(object);
-  $('bone-skin').focus();
+  edit(() => {
+    Object.assign(activeBone.bone, {
+      skin: $('bone-skin').checked, finish: $('bone-finish').value,
+      color: $('bone-color').value, tile: $('bone-tile').value,
+      ratio: $('bone-ratio').valueAsNumber, tileScale: $('bone-tile-scale').valueAsNumber / 100
+    });
+    status('Kemik doku ayarları güncellendi.');
+  }, 'Kemik dokusunu değiştir');
 };
 $('bone-toggle-skin').onclick = () => {
   $('bone-menu').hidden = true;
   if (!activeBone) return;
-  setBoneSkin(activeBone.bone, !activeBone.bone.skin);
-  if (single() === activeBone.source || single() === activeBone.target) paintInspector();
+  edit(() => {
+    activeBone.bone.skin = !activeBone.bone.skin;
+    status(activeBone.bone.skin ? 'Doku düzeltme açıldı.' : 'Doku düzeltme kapatıldı.');
+  }, 'Doku düzeltmeyi değiştir');
 };
 $('delete-bone').onclick = () => {
   $('bone-menu').hidden = true;
@@ -2223,7 +2180,10 @@ document.addEventListener('pointerdown', event => {
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
   $('bone-menu').hidden = true;
-  if (firstJoint) setRigMode(rigMode);
+  if (firstJoint && !boneDialog.open) {
+    setRigAnchor();
+    select();
+  }
 });
 
 function deleteSelection() {
@@ -2420,7 +2380,7 @@ function mergeSelection(objects) {
       connected.add(other);
       newSource.userData.bones.push({ ...bone, target: newTarget.userData.objectId });
     }
-    if (mergedObjects.has(firstJoint)) setRigMode(rigMode);
+    if (mergedObjects.has(firstJoint)) setRigAnchor();
     select(merged);
     setWireframe(wireframe);
     if (merged.userData.mergeMidpoint && !hasVolumeAtOrigin(merged.geometry)) {
@@ -2531,9 +2491,14 @@ $('show-pivots').onclick = () => {
 };
 for (const button of all('[data-mode]')) {
   button.onclick = () => {
+    const next = button.dataset.mode;
+    if (next === 'measure') {
+      setMeasure(mode !== 'measure');
+      return;
+    }
     setPlaying(false);
-    if (measuring) setMeasure(false);
-    setMode(button.dataset.mode);
+    setMode(next);
+    if (next === 'rig') status('Kemik oluşturmaya başlamak için bir iskelet noktasına tıkla.');
   };
 }
 $('first').onclick = () => stopAt(0);
@@ -2594,7 +2559,7 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   if ($('render-settings-dialog').open || $('model-dialog').open || joinDialog.open ||
-      textDialog.open || textEntranceDialog.open || $('timeline-spacing-dialog').open) return;
+      textDialog.open || textEntranceDialog.open || $('timeline-spacing-dialog').open || boneDialog.open) return;
   if ($('render-preview').open) {
     if (key === ' ' && document.activeElement?.tagName !== 'BUTTON') {
       event.preventDefault();
@@ -2630,7 +2595,7 @@ window.addEventListener('keydown', (event) => {
     $('preset-dialog').open
   )
     return;
-  if (key === 'escape' && measuring) {
+  if (key === 'escape' && mode === 'measure') {
     setMeasure(false);
     return;
   }
@@ -2641,7 +2606,7 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   if (key === 'm') {
-    if (!event.repeat) setMeasure(!measuring);
+    if (!event.repeat) setMeasure(mode !== 'measure');
     return;
   }
   const modeKey =
@@ -2650,7 +2615,6 @@ window.addEventListener('keydown', (event) => {
       : undefined;
   if (modeKey) {
     setPlaying(false);
-    if (measuring) setMeasure(false);
     setMode(modeKey);
   }
   if (key === 'delete') edit(deleteSelection);
@@ -2761,10 +2725,10 @@ function openProject(content, handle) {
     const project = decodeProject(JSON.parse(content));
     edit(() => {
       projectDocument = { handle, savedRevision: history.revision };
-      if (measuring) setMeasure(false);
+      if (mode === 'measure') setMeasure(false);
       [...root.children].forEach(disposeObject);
       project.objects.forEach((object) => root.add(object));
-      setRigMode(false);
+      if (mode === 'rig') setMode('select');
       duration = project.duration;
       animations = project.animations;
       atmosphere = project.atmosphere;

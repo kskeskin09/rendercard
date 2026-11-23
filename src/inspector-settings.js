@@ -69,16 +69,7 @@ export function settingsMarkup(object) {
       .join('') +
     '</div></div></div>' +
     '<div class="inspector-block"><h3>İskelet</h3>' +
-    '<label class="check-field" title="Nesnenin seçili merkezine, nesneyle birlikte hareket eden bir bağlantı noktası ekler."><input id="skeleton-joint" type="checkbox"> İskelet bağı</label>' +
-    '<div id="skeleton-links" hidden><label id="skeleton-link-field" class="field" hidden>Kemik<select id="skeleton-link"></select></label>' +
-    '<label class="check-field"><input id="bone-skin" type="checkbox"> Doku düzeltme</label>' +
-    '<p id="bone-empty" class="selection-tip" hidden>3B sahnede iki iskelet noktasını bağla.</p>' +
-    '<div id="bone-skin-fields" hidden>' +
-    '<label class="field">Yüzey<select id="bone-finish"><option value="blend">Uçlardaki yüzeyleri karıştır</option><option value="color">Özel renk</option><option value="tile">Tile (döşeme)</option></select></label>' +
-    '<label id="bone-color-field" class="field" hidden>Renk<input id="bone-color" type="color"></label>' +
-    '<div id="bone-tile-field" hidden><label class="field">Tile<select id="bone-tile">' + options(Object.entries(tiles)) + '</select></label>' +
-    '<label class="field">Tile boyutu (%)<input id="bone-tile-scale" type="number" min="0.1" max="2000" step="any"></label></div>' +
-    '<label class="field" title="%100 dış yüzeye yakın geniş köprü, %50 daha dar bir köprü oluşturur.">Yüzey genişliği (%)<input id="bone-ratio" type="number" min="1" max="100" step="any"></label></div></div></div>' +
+    '<label class="check-field" title="Nesnenin seçili merkezine, nesneyle birlikte hareket eden bir bağlantı noktası ekler."><input id="skeleton-joint" type="checkbox"> İskelet bağı</label></div>' +
     (object.isCamera ? '<div class="inspector-block"><h3>Kamera takibi</h3>' +
       '<label class="field">Takip hedefi<select id="follow-target"></select></label>' +
       '<div id="follow-settings" hidden><output id="follow-distance"></output>' +

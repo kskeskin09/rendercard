@@ -1062,3 +1062,36 @@ test('bone bridge follows mesh surfaces, blends their materials and disappears i
   reloaded.add(...decodeProject(encodeProject(root, 120)).objects);
   assert.equal(rigLinks(reloaded).links[0].bone.skin, true);
 });
+
+test('a bent box joint closes both triangular side gaps and clips overlapping faces', async () => {
+  const { Mesh, MeshBasicMaterial, DoubleSide, Raycaster } = await import('three');
+  const { boneSurface } = await import('../src/rig.js');
+  const base = makeObject('box');
+  const angled = makeObject('box');
+  base.scale.setScalar(2);
+  angled.scale.setScalar(2);
+  angled.position.set(.7, 2.25, 0);
+  angled.rotation.z = -Math.PI / 6;
+  base.updateMatrixWorld(true);
+  angled.updateMatrixWorld(true);
+  const surface = boneSurface(base, angled, 100);
+  assert(surface);
+  const bridge = new Mesh(surface.geometry, new MeshBasicMaterial({ side: DoubleSide }));
+  bridge.updateMatrixWorld();
+  for (const side of [-1, 1]) {
+    for (const [x, y] of [[-.3, 1.4], [.1, 1.2], [.4, 1.12]]) {
+      const ray = new Raycaster(new Vector3(x, y, 5 * side), new Vector3(0, 0, -side));
+      assert(ray.intersectObject(bridge).some(hit => Math.abs(hit.point.z - side) < 1e-4));
+    }
+  }
+  const vertices = surface.geometry.attributes.position;
+  for (let i = 0; i < vertices.count; i += 3) {
+    const point = new Vector3().fromBufferAttribute(vertices, i)
+      .add(new Vector3().fromBufferAttribute(vertices, i + 1))
+      .add(new Vector3().fromBufferAttribute(vertices, i + 2)).divideScalar(3);
+    for (const mesh of [base, angled]) {
+      const local = mesh.worldToLocal(point.clone());
+      assert(Math.max(Math.abs(local.x), Math.abs(local.y), Math.abs(local.z)) >= .49999);
+    }
+  }
+});

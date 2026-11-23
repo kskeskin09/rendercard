@@ -293,7 +293,6 @@
             <span></span><b id="viewport-camera-name">Varsayılan</b>
           </div>
           <div class="tool-strip" aria-label="Dönüşüm araçları">
-            <button id="skeleton-mode" type="button" title="İskelet bağlantılarını düzenle" aria-label="İskelet bağlantılarını düzenle" aria-pressed="false"><span data-icon="bone"></span></button>
             <button
               data-mode="select"
               data-icon="cursor"
@@ -319,7 +318,15 @@
               title="Boyutlandır (S)"
             ></button
             ><button
+              id="skeleton-mode"
+              data-mode="rig"
+              data-icon="bone"
+              aria-label="İskelet bağlantılarını düzenle"
+              title="İskelet"
+            ></button
+            ><button
               id="measure"
+              data-mode="measure"
               data-icon="ruler"
               aria-label="Mesafe ölç"
               aria-pressed="false"
@@ -517,6 +524,26 @@
       <button id="bone-settings">Doku ayarları</button>
       <button id="delete-bone">Kemiği kaldır</button>
     </div>
+    <dialog id="bone-dialog" class="export-dialog" aria-labelledby="bone-title">
+      <form id="bone-form">
+        <h2 id="bone-title">Kemik doku ayarları</h2>
+        <p id="bone-name" class="selection-tip"></p>
+        <label class="check-field"><input id="bone-skin" type="checkbox"> Doku düzeltme</label>
+        <div id="bone-skin-fields">
+          <label class="field">Yüzey<select id="bone-finish"><option value="blend">Uçlardaki yüzeyleri karıştır</option><option value="color">Özel renk</option><option value="tile">Tile (döşeme)</option></select></label>
+          <label id="bone-color-field" class="field">Renk<input id="bone-color" type="color" value="#b8a8f3"></label>
+          <div id="bone-tile-field" hidden>
+            <label class="field">Tile<select id="bone-tile"></select></label>
+            <label class="field">Tile boyutu (%)<input id="bone-tile-scale" type="number" min="0.1" max="2000" step="any" required></label>
+          </div>
+          <label class="field" title="%100 dış yüzeye yakın geniş köprü, %50 daha dar bir köprü oluşturur.">Yüzey genişliği (%)<input id="bone-ratio" type="number" min="1" max="100" step="any" required></label>
+        </div>
+        <div class="dialog-actions">
+          <button id="close-bone-dialog" class="quiet" type="button">Vazgeç</button>
+          <button class="primary" type="submit">Uygula</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="text-dialog" class="export-dialog" aria-labelledby="text-title">
       <form id="text-form">
         <h3 id="text-title">3B Metin Ekle</h3>

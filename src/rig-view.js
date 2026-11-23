@@ -12,6 +12,11 @@ export function createRigView(scene, root) {
   const pointMaterial = guideMaterial('#f6ca56');
   const boneGuideMaterial = guideMaterial('#9bd2ff');
   const activeMaterial = guideMaterial('#fc8049');
+  const previewMaterial = guideMaterial('#aeea73');
+  const preview = new Mesh(shaft, previewMaterial);
+  preview.renderOrder = 41;
+  preview.visible = false;
+  guides.add(preview);
   const pins = new Map();
   const shafts = new Map();
   const surfaces = new Map();
@@ -19,6 +24,7 @@ export function createRigView(scene, root) {
   const a = new Vector3();
   const b = new Vector3();
   let current;
+  let hovered;
   let enabled = false;
 
   function prune(markers, present, dispose) {
@@ -30,11 +36,24 @@ export function createRigView(scene, root) {
     }
   }
 
+  function placeShaft(marker, start, end) {
+    start.getWorldPosition(a);
+    end.getWorldPosition(b);
+    marker.position.copy(a).lerp(b, .5);
+    b.sub(a);
+    marker.scale.y = b.length();
+    marker.visible = marker.scale.y > 1e-5;
+    if (marker.visible) marker.quaternion.setFromUnitVectors(up, b.normalize());
+  }
+
   function updateGuides(visible) {
     guides.visible = visible && enabled;
     if (!guides.visible) return;
     const { joints, links } = rigLinks(root);
     const active = new Set(joints.filter(rigActive));
+    const canPreview = current !== hovered && active.has(current) && active.has(hovered) &&
+      !links.some(({ source, target }) => (source === current && target === hovered) ||
+        (target === current && source === hovered));
     prune(pins, active);
     for (const object of active) {
       if (!pins.has(object)) {
@@ -45,7 +64,8 @@ export function createRigView(scene, root) {
         pins.set(object, marker);
       }
       const marker = pins.get(object);
-      marker.material = current === object ? activeMaterial : pointMaterial;
+      marker.material = current === object ? activeMaterial :
+        canPreview && hovered === object ? previewMaterial : pointMaterial;
       object.getWorldPosition(marker.position);
     }
     const bones = new Set();
@@ -60,15 +80,11 @@ export function createRigView(scene, root) {
       }
       const marker = shafts.get(link.bone);
       marker.userData.link = link;
-      link.source.getWorldPosition(a);
-      link.target.getWorldPosition(b);
-      marker.position.copy(a).lerp(b, .5);
-      b.sub(a);
-      marker.scale.y = b.length();
-      marker.visible = marker.scale.y > 1e-5;
-      if (marker.visible) marker.quaternion.setFromUnitVectors(up, b.normalize());
+      placeShaft(marker, link.source, link.target);
     }
     prune(shafts, bones);
+    preview.visible = false;
+    if (canPreview) placeShaft(preview, current, hovered);
     guides.updateMatrixWorld(true);
   }
 
@@ -135,17 +151,19 @@ export function createRigView(scene, root) {
   return {
     get enabled() { return enabled; },
     setMode(value, joint) {
+      if (current !== joint || !value) hovered = undefined;
       enabled = value;
       current = joint;
       if (!value) {
         guides.visible = false;
-        guides.clear();
+        for (const marker of [...pins.values(), ...shafts.values()]) marker.removeFromParent();
         pins.clear();
         shafts.clear();
       }
     },
     updateGuides,
     updateSkin,
+    hover(joint) { hovered = joint; },
     pick(ray, button) {
       if (!guides.visible) return;
       const markers = button === 2 ? [...shafts.values()].filter(marker => marker.visible) : [...pins.values()];

@@ -325,6 +325,14 @@ export function createViewport(
   const pointer = new THREE.Vector2();
   const ray = new THREE.Raycaster();
   ray.params.Points.threshold = 0.17;
+  function pointRay(event) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.set(
+      (2 * (event.clientX - rect.left)) / rect.width - 1,
+      1 - (2 * (event.clientY - rect.top)) / rect.height
+    );
+    ray.setFromCamera(pointer, activeCamera(previewShot));
+  }
   let down;
   let sampler;
   const lightMarkers = new THREE.Points(
@@ -433,6 +441,10 @@ export function createViewport(
   }
   renderer.domElement.addEventListener('pointermove', (event) => {
     if (measurement.active) measurement.move(event.clientX, event.clientY);
+    if (rig.enabled && !sampler && event.buttons === 0) {
+      pointRay(event);
+      rig.hover(rig.pick(ray, 0)?.joint);
+    }
     if (!sampler) return;
     previewPosition = [event.clientX, event.clientY];
     if (previewRequest != null) return;
@@ -458,6 +470,7 @@ export function createViewport(
   });
   renderer.domElement.addEventListener('pointerleave', () => {
     if (measurement.active) measurement.move();
+    rig.hover();
     previewPosition = undefined;
     samplePreview.hidden = true;
   });
@@ -513,14 +526,8 @@ export function createViewport(
     );
     down = undefined;
     if (distance > 4) return;
-    const rect = renderer.domElement.getBoundingClientRect();
-    pointer.set(
-      (2 * (event.clientX - rect.left)) / rect.width - 1,
-      1 - (2 * (event.clientY - rect.top)) / rect.height
-    );
-    ray.setFromCamera(pointer, activeCamera(previewShot));
-    const rigHit = rig.pick(ray, event.button);
-    if (rigHit && rigPick?.(event, rigHit)) return;
+    pointRay(event);
+    if (rig.enabled && rigPick?.(event, rig.pick(ray, event.button))) return;
     const light =
       previewShot && shotObject
         ? undefined
