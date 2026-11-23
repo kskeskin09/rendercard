@@ -146,8 +146,8 @@ function collect(object, excluded, { cuts, cutters }) {
   return shapes;
 }
 
-function pairs(root, moving, any = false) {
-  const excluded = new Set();
+function pairs(root, moving, any = false, ignored = []) {
+  const excluded = new Set(ignored);
   moving.traverse((object) => excluded.add(object));
   let hasSolid = solidInHierarchy(moving);
   root.traverse((object) => {
@@ -271,11 +271,11 @@ export function separate(root, moving) {
   return true;
 }
 
-export function sweep(root, moving, from) {
+export function sweep(root, moving, from, ignored) {
   const to = moving.position.clone();
   if (from.distanceToSquared(to) <= tolerance ** 2) return;
   moving.position.copy(from);
-  const candidates = pairs(root, moving);
+  const candidates = pairs(root, moving, false, ignored);
   if (!candidates.length) {
     moving.position.copy(to);
     return;
@@ -326,13 +326,7 @@ function castPairs(candidates, travel) {
 
 export function staticContacts(root, moving) {
   const origin = moving.getWorldPosition(new Vector3());
-  const candidates = pairs(root, moving).filter(({ b }) => {
-    for (let node = b.object; node && node !== root; node = node.parent) {
-      if (hasKeys(node) || node.userData.positionMode === 'physics')
-        return false;
-    }
-    return true;
-  });
+  const candidates = pairs(root, moving).filter(({ b }) => isStatic(b.object, root));
   return (position, travel) => {
     const offset = position.clone().sub(origin);
     return castPairs(
@@ -361,10 +355,19 @@ export function followCamera(root, camera, desired) {
   });
 }
 
-export function overlaps(root, object, any = false) {
+function isStatic(object, root) {
+  for (let node = object; node && node !== root; node = node.parent) {
+    if (hasKeys(node) || node.userData.positionMode === 'physics' || node.userData.rotationMode === 'physics')
+      return false;
+  }
+  return true;
+}
+
+export function overlaps(root, object, any = false, staticOnly = false) {
   const objects = new Set();
   for (const { a, b } of pairs(root, object, any)) {
     if (
+      (!staticOnly || isStatic(b.object, root)) &&
       a.bounds.intersectsBox(b.bounds) &&
       contact(a, b)?.distance < -tolerance
     )

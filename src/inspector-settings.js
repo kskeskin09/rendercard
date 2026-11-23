@@ -1,6 +1,6 @@
 import { applyTile, setTileOptions, setTileSize, tiles } from './tiles.js';
 import { changePivot, groundObject } from './spatial.js';
-import { isPrimitive, shapeSides, setDetail } from './model.js';
+import { isPrimitive, shapeSides, setDetail, updateMeshSurface } from './model.js';
 import { colorMarkup, bindColor } from './color-editor.js';
 import { rotationPaths } from './motion.js';
 import { speedMarkup, bindSpeed } from './speed-graph.js';
@@ -8,7 +8,7 @@ import { axes, axisHeading, axisRow } from './inspector-grid.js';
 
 const choices = [
   ['Sol', 'Orta', 'Sağ'],
-  ['En alt', 'Orta', 'En üst'],
+  ['En üst', 'Orta', 'En alt'],
   ['Sol', 'Orta', 'Sağ']
 ];
 const options = (entries) =>
@@ -28,7 +28,7 @@ const vectorFields = (id, label) =>
       id +
       '="' +
       axis +
-      '" min="-1000" max="1000" step="any">'
+      '" min="' + (id.startsWith('angular') ? -3600 : -1000) + '" max="' + (id.startsWith('angular') ? 3600 : 1000) + '" step="any">'
   );
 
 export function settingsMarkup(object) {
@@ -57,7 +57,7 @@ export function settingsMarkup(object) {
           '" aria-label="Merkez noktası ' +
           label +
           '">' +
-          options(choices[index].map((choice, i) => [i - 1, choice])) +
+          options(choices[index].map((choice, i) => [index === 1 ? 1 - i : i - 1, choice])) +
           '</select></label>'
         );
       })
@@ -71,9 +71,10 @@ export function settingsMarkup(object) {
     (object.isMesh || type === 'group' ? '<div class="field">Opaklık (%)<div class="opacity-fields">' +
       '<input id="object-opacity" aria-label="Opaklık (%)" type="number" min="0" max="100">' +
       '<input id="opacity-range" aria-label="Opaklık kaydırıcısı" type="range" min="0" max="100"></div></div>' : '') +
-    (primitive
+    (primitive || type === 'mesh'
       ? '<label class="field" title="Düz bir renk veya tekrarlanan bir desen seç.">Yüzey<select id="object-finish">' +
         options([
+          ...(type === 'mesh' ? [['parts', 'Parça renkleri']] : []),
           ['color', 'Renk'],
           ['tile', 'Tile (döşeme)']
         ]) +
@@ -137,11 +138,16 @@ export function settingsMarkup(object) {
     ) +
     '</div>' +
     '<label class="field" title="Çarpışmada yüzeye dik hızın ters yönde korunan yüzdesi.">Sekme (%)<input id="object-bounce" type="number" min="0" max="100" step="any"></label>' +
-    '<p class="selection-tip">Hız grafiği bu modda dönüşü ve boyutu etkiler.</p></div>' +
-    speedMarkup +
+    '<p class="selection-tip">Konum fiziksel hızla hesaplanır. Alttaki grafik boyutu etkiler.</p></div>' +
+    speedMarkup('linear', 'Konum ve boyut') +
+    (!object.isLight ? '<label class="field">Dönüş hareketi<select id="rotation-motion"><option value="keys">Karelerle dönüş</option><option value="physics">Açısal ivme ve hız</option></select></label>' +
+    '<div id="angular-physics" hidden><div class="axis-table">' + axisHeading() +
+    axisRow('Açısal ivme <small>°/s²</small>', vectorFields('angular-acceleration', 'Açısal ivme')) +
+    axisRow('Açısal hız <small>°/s</small>', vectorFields('angular-velocity', 'Başlangıç açısal hızı')) +
+    '</div><label class="field" title="Engelle temas eden eksenin açısal hızı tersine döner ve bu yüzde kadarını korur.">Açısal sekme (%)<input id="angular-bounce" type="number" min="0" max="100" step="any"></label></div>' +
+    '<div id="angular-keys">' + speedMarkup('angular', 'Dönüş') +
     '<label class="field" title="Kısa veya uzun dönüş yolunu seç. Bir eksende belirli yönde ya da tam tur dönmek için açıları izle seçeneğini kullan.">Dönüş yolu<select id="rotation-path">' +
-    options(Object.entries(rotationPaths)) +
-    '</select></label></div>'
+    options(Object.entries(rotationPaths)) + '</select></label></div>' : '') + '</div>'
   );
 }
 
@@ -265,9 +271,17 @@ export function bindSettings(
     };
   }
   if ($('object-finish')) {
+    const updateSurface = () => {
+      if (data.type === 'mesh') updateMeshSurface(object);
+      else applyTile(object.material, data);
+    };
+    const updateOptions = () => {
+      if (data.type === 'mesh') updateMeshSurface(object);
+      else setTileOptions(object.material, data);
+    };
     const repaintTileFields = () => {
       $('tile-settings').hidden = data.finish !== 'tile';
-      $('custom-color-settings').hidden = data.finish === 'tile' && data.tileColorMode === 'default';
+      $('custom-color-settings').hidden = data.finish === 'parts' || (data.finish === 'tile' && data.tileColorMode === 'default');
     };
     $('object-finish').value = data.finish;
     $('object-tile').value = data.tile;
@@ -278,21 +292,21 @@ export function bindSettings(
       edit(() => {
         data.finish = event.target.value;
         repaintTileFields();
-        applyTile(object.material, data);
+        updateSurface();
       });
     $('object-tile').onchange = (event) =>
       edit(() => {
         data.tile = event.target.value;
-        applyTile(object.material, data);
+        updateSurface();
       });
     $('tile-color-mode').onchange = event => edit(() => {
       data.tileColorMode = event.target.value;
-      setTileOptions(object.material, data);
+      updateOptions();
       repaintTileFields();
     }, 'Karo rengini değiştir');
     $('tile-fit').onchange = event => edit(() => {
       data.tileFit = event.target.checked;
-      setTileOptions(object.material, data);
+      updateOptions();
       repaintTileFields();
     }, 'Karo sığdırmayı değiştir');
     number(
@@ -302,7 +316,8 @@ export function bindSettings(
       2000,
       (value) => {
         data.tileScale = value / 100;
-        setTileSize(object.material, data.tileScale);
+        if (data.type === 'mesh') for (const material of object.material) setTileSize(material, data.tileScale);
+        else setTileSize(object.material, data.tileScale);
       }
     );
   }
@@ -352,10 +367,14 @@ export function bindSettings(
     }, 'Taban kenarı sayısını değiştir');
   }
   if ($('object-color'))
-    bindColor(panel, object.isLight ? object.color : object.material.color, {
+    bindColor(panel, object.isLight ? object.color : object.surfaceColor ?? object.material.color, {
       edit,
       pick,
-      status
+      status,
+      changed: object.surfaceColor && (() => {
+        data.surfaceColor = '#' + object.surfaceColor.getHexString();
+        updateMeshSurface(object);
+      })
     });
   if (object.isLight)
     number(
@@ -404,7 +423,9 @@ export function bindSettings(
   };
   for (const [field, property] of [
     ['acceleration', 'physicsAcceleration'],
-    ['velocity', 'initialVelocity']
+    ['velocity', 'initialVelocity'],
+    ['angular-acceleration', 'angularAcceleration'],
+    ['angular-velocity', 'angularVelocity']
   ]) {
     for (const [index, input] of [
       ...panel.querySelectorAll('[data-' + field + ']')
@@ -414,10 +435,10 @@ export function bindSettings(
         if (Number.isFinite(input.valueAsNumber))
           setMotion(() => {
             data[property][index] = Math.min(
-              1000,
-              Math.max(-1000, input.valueAsNumber)
+              Number(input.max),
+              Math.max(Number(input.min), input.valueAsNumber)
             );
-          });
+          }, field.startsWith('angular') ? 'angular' : 'linear');
         input.value = data[property][index];
       };
     }
@@ -432,7 +453,29 @@ export function bindSettings(
       });
     input.value = data.restitution * 100;
   };
-  bindSpeed(panel, data, edit, status);
+  bindSpeed(panel.querySelector('[data-speed-curve="linear"]'), data, 'speedProfile', edit, status);
+  if ($('rotation-motion')) {
+    const mode = $('rotation-motion');
+    const repaint = () => {
+      mode.value = data.rotationMode;
+      $('angular-physics').hidden = data.rotationMode !== 'physics';
+      $('angular-keys').hidden = data.rotationMode === 'physics';
+    };
+    mode.onchange = () => {
+      setMotion(() => { data.rotationMode = mode.value; }, 'angular');
+      repaint();
+    };
+    const bounce = $('angular-bounce');
+    bounce.value = data.angularRestitution * 100;
+    bounce.onchange = () => {
+      if (Number.isFinite(bounce.valueAsNumber)) setMotion(() => {
+        data.angularRestitution = Math.min(100, Math.max(0, bounce.valueAsNumber)) / 100;
+      }, 'angular');
+      bounce.value = data.angularRestitution * 100;
+    };
+    bindSpeed(panel.querySelector('[data-speed-curve="angular"]'), data, 'angularSpeedProfile', edit, status);
+    repaint();
+  }
   $('scene-clip').replaceChildren(
     new Option('Her animasyonda', ''),
     ...scenes.map((clip) => new Option(clip.name, clip.id))
@@ -443,9 +486,11 @@ export function bindSettings(
       data.sceneClip = event.target.value || null;
       sceneChanged();
     });
-  $('rotation-path').value = data.rotationPath;
-  $('rotation-path').onchange = (event) =>
+  if ($('rotation-path')) {
+    $('rotation-path').value = data.rotationPath;
+    $('rotation-path').onchange = (event) =>
     edit(() => {
       data.rotationPath = event.target.value;
     });
+  }
 }

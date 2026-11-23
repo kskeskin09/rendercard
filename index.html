@@ -94,11 +94,9 @@
           <button id="add-box" class="shape">
             <span class="shape-art box-art" data-icon="box"></span>Kutu</button
           >
-          <details class="shape-picker">
-            <summary class="shape"><span class="shape-art sphere-art" data-icon="prism"></span> Şekiller <span data-icon="chevron"></span></summary>
-            <button class="shape" data-add-shape="prism"><span data-icon="prism"></span> Üçgen prizma</button>
-            <button class="shape" data-add-shape="pyramid"><span data-icon="pyramid"></span> Piramit</button>
-          </details>
+          <button id="add-pyramid" class="shape">
+            <span class="shape-art sphere-art" data-icon="pyramid"></span>Piramit
+          </button>
           <button
             id="add-light"
             class="shape"
@@ -461,9 +459,16 @@
         <span data-icon="save"></span> Preset olarak kaydet
       </button>
       <button id="context-rename">Yeniden adlandır</button>
+      <button id="context-duplicate">Çoğalt</button>
+      <button id="context-focus">Odakla</button>
       <button id="context-delete">Sil</button>
     </div>
     <div id="view-camera-menu" class="menu object-menu" hidden></div>
+    <div id="timeline-menu" class="menu object-menu" hidden>
+      <label id="timeline-camera-field" class="field">Geçilecek kamera<select id="timeline-camera-change"></select></label>
+      <button id="timeline-move">Taşı</button>
+      <button id="timeline-delete">Sil</button>
+    </div>
     <dialog id="render-preview" aria-labelledby="render-preview-title">
       <div class="render-preview-heading">
         <h2 id="render-preview-title">Render önizlemesi</h2>

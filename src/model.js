@@ -1,6 +1,7 @@
 import {
   BoxGeometry,
   BufferGeometry,
+  Color,
   CylinderGeometry,
   Float32BufferAttribute,
   Group,
@@ -51,7 +52,7 @@ export const types = {
   camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 7;
+export const projectVersion = 8;
 export const shapeSides = [3, 4, 5, 6, 8, 16, 32, 64];
 export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid'].includes(type);
 const channels = ['position', 'rotation', 'scale'];
@@ -85,12 +86,19 @@ const settingsDefaults = {
   physicsClip: 'main',
   sceneClip: null,
   speedProfile: null,
+  rotationMode: 'keys',
+  angularVelocity: [0, 0, 0],
+  angularAcceleration: [0, 0, 0],
+  angularRestitution: 0,
+  angularSpeedProfile: null,
+  angularClip: 'main',
   rotationPath: 'short',
   finish: 'color',
   tile: 'checker',
   tileScale: 1,
   tileFit: false,
   tileColorMode: 'default',
+  surfaceColor: '#b8a8f3',
   pivot: [0, 0, 0],
   offset: [0, 0, 0]
 };
@@ -152,6 +160,20 @@ function material(color, settings) {
 
 export function materialsOf(object) {
   return Array.isArray(object.material) ? object.material : [object.material];
+}
+
+function partSurface(object, part) {
+  const { finish, tile, tileScale, tileFit, tileColorMode, surfaceColor } = object.userData;
+  return finish === 'parts' ? part : { ...part, finish, tile, tileScale, tileFit, tileColorMode, color: surfaceColor };
+}
+
+export function updateMeshSurface(object) {
+  const data = object.userData;
+  for (const [index, surface] of object.material.entries()) {
+    const settings = partSurface(object, data.parts[index]);
+    surface.color.set(settings.color);
+    applyTile(surface, settings);
+  }
 }
 
 function configureMesh(object) {
@@ -229,7 +251,7 @@ function bakedParts(object, buffer, matrix) {
     if (!record) {
       record = {
         part: {
-          ...settingsOf(source),
+          ...settingsOf(source === object.userData ? source : partSurface(object, source)),
           type: 'baked',
           color: '#' + surfaces[materialIndex].color.getHexString(),
           matrix: matrix.toArray(),
@@ -264,6 +286,7 @@ function bakedParts(object, buffer, matrix) {
 
 function makeJoinedMesh(parts, name = 'Birleşik ağ', data) {
   const settings = settingsOf(data);
+  settings.finish = data?.finish ?? 'parts';
   const matrix = new Matrix4();
   const geometries = parts.map((part) =>
     partBuffer(part).applyMatrix4(matrix.fromArray(part.matrix))
@@ -283,6 +306,8 @@ function makeJoinedMesh(parts, name = 'Birleşik ağ', data) {
   mesh.name = name;
   mesh.userData = { type: 'mesh', keys: [], tracks: {}, parts, ...settings };
   mesh.userData.objectId ??= crypto.randomUUID();
+  mesh.surfaceColor = new Color(settings.surfaceColor);
+  if (settings.finish !== 'parts') updateMeshSurface(mesh);
   mesh.visible = !settings.hidden;
   updateOpacity(mesh);
   return mesh;
@@ -294,16 +319,16 @@ export function joinMeshes(objects) {
   const offset = new Matrix4().makeTranslation(-center.x, -center.y, -center.z);
   const mixed = objects.some(object => object.userData.negative) &&
     objects.some(object => !object.userData.negative);
-  const { cuts, cutters } = mixed ? sceneCuts(parent, objects) : { cuts: new Map(), cutters: new Set() };
+  const { cuts } = mixed ? sceneCuts(parent, objects) : { cuts: new Map() };
   const parts = objects.flatMap((object) => {
-    if (cutters.has(object)) return [];
+    if (mixed && object.userData.negative) return [];
     object.updateMatrix();
     const matrix = new Matrix4().multiplyMatrices(offset, object.matrix);
     if (cuts.has(object)) return bakedParts(object, cuts.get(object), matrix);
     if (object.userData.type === 'mesh') {
       matrix.multiply(new Matrix4().makeTranslation(...object.userData.offset));
       return object.userData.parts.map((part) => ({
-        ...part,
+        ...partSurface(object, part),
         hidden: object.userData.hidden || part.hidden === true,
         opacity: ((part.opacity ?? 100) * object.userData.opacity) / 100,
         matrix: new Matrix4()
@@ -322,21 +347,28 @@ export function joinMeshes(objects) {
       }
     ];
   });
-  if (!parts.length) return null;
+  if (!parts.length) {
+    objects.forEach(disposeObject);
+    fitParentAfterJoin(parent);
+    return null;
+  }
   const hidden = parts.every((part) => part.hidden);
   if (hidden)
     parts.forEach((part) => {
       part.hidden = false;
     });
-  const merged = makeJoinedMesh(parts, undefined, {
-    hidden, negative: objects.every(object => object.userData.negative)
-  });
-  merged.userData.solid = objects.some((object) => object.userData.solid);
+  const merged = makeJoinedMesh(parts, undefined, { hidden });
+  merged.userData.solid = objects.some(object => (!mixed || !object.userData.negative) && object.userData.solid);
   merged.position.copy(center);
   objects.forEach(disposeObject);
   parent.add(merged);
   fitPivot(merged);
+  fitParentAfterJoin(parent);
   return merged;
+}
+
+function fitParentAfterJoin(parent) {
+  for (let node = parent; node?.userData.pivot; node = node.parent) fitPivot(node);
 }
 
 export function setDetail(object, detail) {
@@ -410,7 +442,10 @@ export function poseAt(object, frame, keys = object.userData.keys) {
     )
   );
   object.scale.fromArray(interpolate('scale', t));
-  interpolateRotation(object, a.rotation, b.rotation, t, rotationPath);
+  const angularTime = object.userData.angularSpeedProfile
+    ? profileTime(clock, object.userData.angularSpeedProfile)
+    : easedTime(clock, easeIn, easeOut);
+  interpolateRotation(object, a.rotation, b.rotation, angularTime, rotationPath);
 }
 
 export function applyAcceleration(object, frame, startFrame = 0) {
@@ -479,6 +514,11 @@ export function decodeProject(project) {
   const validClipId = (id) =>
     typeof id === 'string' && /^(main|clip-[0-9a-f-]{1,36})$/.test(id);
   const validSettings = (data) =>
+    (data.rotationMode == null || ['keys', 'physics'].includes(data.rotationMode)) &&
+    [data.angularVelocity, data.angularAcceleration].every(tuple => tuple == null || (numericTuple(tuple) && tuple.every(value => Math.abs(value) <= 3600))) &&
+    (data.angularRestitution == null || (Number.isFinite(data.angularRestitution) && data.angularRestitution >= 0 && data.angularRestitution <= 1)) &&
+    (data.angularSpeedProfile == null || (numericTuple(data.angularSpeedProfile) && data.angularSpeedProfile.every(value => value >= 0 && value <= 200) && data.angularSpeedProfile.some(Boolean))) &&
+    (data.surfaceColor == null || /^#[0-9a-f]{6}$/i.test(data.surfaceColor)) &&
     (data.negative == null || typeof data.negative === 'boolean') &&
     (data.sides == null || shapeSides.includes(data.sides)) &&
     (data.tileFit == null || typeof data.tileFit === 'boolean') &&
@@ -520,6 +560,7 @@ export function decodeProject(project) {
     (data.positionMode == null ||
       ['keys', 'physics'].includes(data.positionMode)) &&
     (data.physicsClip == null || validClipId(data.physicsClip)) &&
+    (data.angularClip == null || validClipId(data.angularClip)) &&
     (data.sceneClip == null || validClipId(data.sceneClip)) &&
     (data.speedProfile == null ||
       (numericTuple(data.speedProfile) &&
@@ -535,7 +576,7 @@ export function decodeProject(project) {
         Math.abs(data.acceleration) <= 1)) &&
     (data.rotationPath == null ||
       Object.hasOwn(rotationPaths, data.rotationPath)) &&
-    (data.finish == null || ['color', 'tile'].includes(data.finish)) &&
+    (data.finish == null || ['parts', 'color', 'tile'].includes(data.finish)) &&
     (data.tile == null || Object.hasOwn(tiles, data.tile)) &&
     (data.tileScale == null ||
       (Number.isFinite(data.tileScale) &&
@@ -602,7 +643,7 @@ export function decodeProject(project) {
           data.intensity > 10000)) ||
       (data.type === 'mesh' &&
         (!Array.isArray(data.parts) ||
-          (!data.parts.some(part => part?.type === 'baked') && data.parts.length < 2) ||
+          data.parts.length < 1 ||
           !data.parts.every(validPart))) ||
       (isPrimitive(data.type) && !validPrimitive(data))
     ) {
@@ -617,7 +658,11 @@ export function decodeProject(project) {
       project.version < 7 && source.finish === 'tile' && source.tileColorMode == null
         ? { ...source, tileColorMode: 'custom' }
         : source;
-    const settings = migratedTile(data);
+    const settings = { ...migratedTile(data) };
+    if (project.version < 8) {
+      if (data.type === 'mesh') settings.finish = 'parts';
+      settings.angularSpeedProfile = data.speedProfile;
+    }
     const object =
       data.type === 'mesh'
         ? makeJoinedMesh(structuredClone(data.parts.map(migratedTile)), data.name, settings)
@@ -631,7 +676,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, 5, 6, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, 6, 7, projectVersion].includes(project?.version) ||
     (project.name != null && (typeof project.name !== 'string' || project.name.length > 80 || !project.name.trim())) ||
     !validFrame(project.duration) ||
     project.duration < 1 ||

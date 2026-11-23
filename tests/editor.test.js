@@ -17,7 +17,8 @@ import {
   makeObject,
   poseAt,
   setDetail,
-  writeKey
+  writeKey,
+  updateMeshSurface
 } from '../src/model.js';
 import {
   anchorScale,
@@ -523,4 +524,96 @@ test('a camera can pass through a baked opening and stops against the remaining 
   camera.position.x = 1.2;
   const blocked = followCamera(root, camera, new Vector3(1.2, 0, 3));
   assert.ok(blocked.z < -0.5 && blocked.z > -1);
+});
+
+test('a flush negative removes both coplanar caps and the baked opening stays clear', async () => {
+  const { sceneCuts } = await import('../src/boolean-cuts.js');
+  const { Mesh, Raycaster } = await import('three');
+  const root = new Group();
+  const box = makeObject('box');
+  const negative = makeObject('box', 'Kesici', '#ffffff', 24, { negative: true });
+  negative.scale.set(.5, 1, .5);
+  root.add(box, negative);
+  const cut = sceneCuts(root).cuts.get(box);
+  const down = new Raycaster(new Vector3(0, 3, 0), new Vector3(0, -1, 0));
+  const up = new Raycaster(new Vector3(0, -3, 0), new Vector3(0, 1, 0));
+  const view = new Mesh(cut, box.material);
+  assert.equal(down.intersectObject(view).length, 0);
+  assert.equal(up.intersectObject(view).length, 0);
+  const merged = joinMeshes([box, negative]);
+  merged.updateWorldMatrix(true, true);
+  assert.equal(root.children.length, 1);
+  assert.equal(down.intersectObject(merged).length, 0);
+  assert.equal(up.intersectObject(merged).length, 0);
+  assert.equal(merged.userData.negative, false);
+});
+
+test('joining an entirely removed volume leaves no mesh and other joins stay positive', () => {
+  const root = new Group();
+  const positive = makeObject('box');
+  const negative = makeObject('box', undefined, undefined, 24, { negative: true });
+  root.add(positive, negative);
+  assert.equal(joinMeshes([positive, negative]), null);
+  assert.equal(root.children.length, 0);
+
+  const left = makeObject('box', 'Sol', '#ff4400', 24, { negative: true });
+  const right = makeObject('box', 'Sağ', '#2244ff', 24, { negative: true });
+  right.position.x = 2;
+  root.add(left, right);
+  const joined = joinMeshes([left, right]);
+  assert.equal(joined.userData.negative, false);
+  joined.userData.finish = 'tile';
+  joined.userData.tile = 'brick';
+  updateMeshSurface(joined);
+  const restored = decodeProject(encodeProject(root, 120)).objects[0];
+  assert.equal(restored.userData.finish, 'tile');
+  assert(restored.material.every(material => material.map));
+  restored.userData.finish = 'parts';
+  updateMeshSurface(restored);
+  assert.deepEqual(restored.material.map(material => material.color.getHexString()), ['ff4400', '2244ff']);
+});
+
+test('the angular curve and physical acceleration are independent from position', async () => {
+  const { angularTrajectory } = await import('../src/dynamics.js');
+  const object = makeObject('box', undefined, undefined, 24, {
+    angularSpeedProfile: [10, 25, 200], speedProfile: [100, 100, 100],
+    rotationPath: 'axes'
+  });
+  writeKey(object, 0);
+  object.position.x = 4;
+  object.rotation.x = Math.PI;
+  writeKey(object, 40);
+  poseAt(object, 20);
+  close(object.position.x, 2);
+  assert(object.rotation.x < Math.PI / 4);
+  const free = angularTrajectory([0, 0, 0], [1, 0, 0], [2, 0, 0], 0, () => false);
+  close(free(30)[0], 2);
+  const bounce = angularTrajectory([0, 0, 0], [1, 0, 0], [0, 0, 0], .5, angles => angles[0] > .4);
+  assert(bounce(12)[0] > .39);
+  assert(bounce(24)[0] > .18 && bounce(24)[0] < .23);
+  close(bounce(0)[0], 0);
+});
+
+test('symmetric multi-transforms preserve the shared center for translation, rotation and scale', async () => {
+  const { selectionTransforms } = await import('../src/multi-transform.js');
+  const { Quaternion } = await import('three');
+  const center = new Vector3(2, 0, 0);
+  const points = [0, 4].map(x => ({
+    position: new Vector3(x, 0, 0),
+    rotation: new Quaternion(), scale: new Vector3(1, 1, 1), resizable: true
+  }));
+  const control = {
+    position: new Vector3(3, 0, 0),
+    quaternion: new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), Math.PI / 2),
+    scale: new Vector3(2, 1, 1)
+  };
+  const moved = selectionTransforms(points, center, control, 'translate', true);
+  assert.deepEqual(moved.map(item => item.position.x), [-1, 5]);
+  const scaled = selectionTransforms(points, center, control, 'scale', true);
+  assert.deepEqual(scaled.map(item => item.position.x), [-2, 6]);
+  assert.deepEqual(scaled.map(item => item.scale.x), [2, 2]);
+  const rotated = selectionTransforms(points, center, control, 'rotate', true);
+  close(rotated[0].position.x, 2);
+  close(rotated[0].position.y, -2);
+  close(rotated[1].position.y, 2);
 });

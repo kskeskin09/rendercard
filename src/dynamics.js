@@ -48,3 +48,38 @@ export function trajectory(origin, velocity, gravity, restitution, cast) {
     return states[step].position;
   };
 }
+
+export function angularTrajectory(origin, velocity, acceleration, restitution, blocked) {
+  const dt = 1 / 120;
+  const states = [{ angles: origin.slice(), speed: velocity.slice() }];
+  return frame => {
+    const step = Math.max(0, Math.round(frame * 4));
+    while (states.length <= step) {
+      const { angles: previous, speed: previousSpeed } = states.at(-1);
+      const angles = previous.slice();
+      const speed = previousSpeed.slice();
+      const sample = states.length / 4;
+      for (let axis = 0; axis < 3; axis++) {
+        const start = angles[axis];
+        const increment = speed[axis] * dt + acceleration[axis] * dt ** 2 / 2;
+        if (!increment) continue;
+        angles[axis] += increment;
+        speed[axis] += acceleration[axis] * dt;
+        if (!blocked(angles, sample)) continue;
+        let safe = 0;
+        let impact = 1;
+        for (let iteration = 0; iteration < 10; iteration++) {
+          const fraction = (safe + impact) / 2;
+          angles[axis] = start + increment * fraction;
+          if (blocked(angles, sample)) impact = fraction;
+          else safe = fraction;
+        }
+        angles[axis] = start + increment * safe;
+        speed[axis] = -speed[axis] * restitution;
+        if (Math.abs(speed[axis]) < 0.01) speed[axis] = 0;
+      }
+      states.push({ angles, speed });
+    }
+    return states[step].angles;
+  };
+}

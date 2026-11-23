@@ -8,6 +8,8 @@ export function installPresets({
   fromObject,
   renameObject,
   deleteObject,
+  duplicateObject,
+  focusObject,
   status
 }) {
   const $ = (id) => document.getElementById(id);
@@ -87,6 +89,12 @@ export function installPresets({
       status(target.value.name + ' preseti silindi.');
     }
   };
+  for (const [id, run] of [['context-duplicate', duplicateObject], ['context-focus', focusObject]]) {
+    $(id).onclick = () => {
+      $('object-menu').hidden = true;
+      if (target?.kind === 'object') run(target.value);
+    };
+  }
   $('close-preset-dialog').onclick = () => $('preset-dialog').close();
   $('preset-form').onsubmit = (event) => {
     event.preventDefault();
@@ -161,6 +169,8 @@ export function installPresets({
     target = { kind, value };
     const menu = $('object-menu');
     $('object-to-preset').hidden = kind !== 'object';
+    $('context-duplicate').hidden = kind !== 'object';
+    $('context-focus').hidden = kind !== 'object';
     menu.hidden = false;
     const row = event.currentTarget.getBoundingClientRect();
     const x = event.clientX || row.left;

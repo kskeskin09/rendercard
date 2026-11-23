@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { configurePointLight, materialsOf } from './model.js';
 import { localBounds } from './spatial.js';
 import { updateOpacity } from './opacity.js';
@@ -82,18 +85,19 @@ export function createViewport(
   defaultLights.visible = false;
   scene.add(defaultLights);
   const emitters = new Map();
-  const edgeLine = new THREE.LineSegments(
-    new THREE.BufferGeometry(),
-    new THREE.LineBasicMaterial({ depthTest: false })
+  const edgeGeometry = new LineSegmentsGeometry().setPositions(new Float32Array(24));
+  const edgeStroke = new LineSegments2(edgeGeometry, new LineMaterial({
+    color: '#252939', linewidth: 8, depthTest: false, toneMapped: false
+  }));
+  const edgeLine = new LineSegments2(edgeGeometry,
+    new LineMaterial({ linewidth: 4.5, depthTest: false, toneMapped: false })
   );
-  edgeLine.geometry.setAttribute(
-    'position',
-    new THREE.Float32BufferAttribute(24, 3)
-  );
-  edgeLine.frustumCulled = false;
-  edgeLine.renderOrder = 13;
-  edgeLine.visible = false;
-  scene.add(edgeLine);
+  for (const [index, line] of [edgeStroke, edgeLine].entries()) {
+    line.frustumCulled = false;
+    line.renderOrder = 13 + index;
+    line.visible = false;
+    scene.add(line);
+  }
   let highlighted;
 
   function highlightEdges(object, axis) {
@@ -106,15 +110,17 @@ export function createViewport(
   function updateHighlightedEdges(clean) {
     edgeLine.visible =
       !clean && Boolean(highlighted && highlighted.object.visible);
+    edgeStroke.visible = edgeLine.visible;
     if (!edgeLine.visible) return;
     const { object, axis } = highlighted;
     const bounds = localBounds(object);
     if (bounds.isEmpty()) {
       edgeLine.visible = false;
+      edgeStroke.visible = false;
       return;
     }
     const [a, b] = ['x', 'y', 'z'].filter((component) => component !== axis);
-    const attribute = edgeLine.geometry.attributes.position;
+    const positions = edgeGeometry.attributes.instanceStart.data;
     const point = new THREE.Vector3();
     let i = 0;
     for (const first of [bounds.min[a], bounds.max[a]]) {
@@ -124,13 +130,14 @@ export function createViewport(
           point[b] = second;
           point[axis] = end;
           point.applyMatrix4(object.matrixWorld);
-          attribute.setXYZ(i++, point.x, point.y, point.z);
+          point.toArray(positions.array, i);
+          i += 3;
         }
       }
     }
-    attribute.needsUpdate = true;
+    positions.needsUpdate = true;
     edgeLine.material.color.set(
-      { x: '#ff8582', y: '#93e473', z: '#79b5ff' }[axis]
+      { x: '#ff7369', y: '#a9ff68', z: '#68c8ff' }[axis]
     );
   }
 
@@ -179,13 +186,15 @@ export function createViewport(
     { capture: true }
   );
   const transform = new TransformControls(camera, renderer.domElement);
+  const selectionPivot = new THREE.Object3D();
+  scene.add(selectionPivot);
   transform.setSize(0.78);
   const transformHelper = transform.getHelper();
   scene.add(transformHelper);
   transform.addEventListener('dragging-changed', (event) => {
     orbit.enabled = !event.value;
   });
-  transform.addEventListener('objectChange', () => change(symmetricScale));
+  transform.addEventListener('objectChange', () => change(symmetricScale, transform.object === selectionPivot ? selectionPivot : undefined));
   transform.addEventListener('mouseDown', () => {
     const direction =
       transform.mode === 'scale' && transform.axis !== 'XYZ'
@@ -193,8 +202,9 @@ export function createViewport(
             .clone()
             .applyQuaternion(transform.worldQuaternionStart.clone().invert())
         : undefined;
-    editing(direction, transform.axis);
-    if (transform.mode === 'scale')
+    const multi = transform.object === selectionPivot ? selectionPivot : undefined;
+    editing(direction, transform.axis, multi);
+    if (transform.mode === 'scale' && !multi)
       highlightEdges(transform.object, transform.axis?.toLowerCase());
   });
   transform.addEventListener('mouseUp', () => {
@@ -233,9 +243,17 @@ export function createViewport(
     selected = object;
     alignment = targets.length > 1 ? targets[0] : undefined;
     mode = nextMode;
-    if (!selected || mode === 'select') transform.detach();
+    if ((!selected && targets.length < 2) || mode === 'select') transform.detach();
     else {
-      transform.attach(selected);
+      if (!selected) {
+        selectionPivot.position.set(0, 0, 0);
+        for (const target of targets)
+          selectionPivot.position.add(target.getWorldPosition(new THREE.Vector3()));
+        selectionPivot.position.divideScalar(targets.length);
+        selectionPivot.quaternion.identity();
+        selectionPivot.scale.setScalar(1);
+      }
+      transform.attach(selected ?? selectionPivot);
       transform.setMode(mode);
     }
   }
@@ -257,6 +275,43 @@ export function createViewport(
   lightMarkers.frustumCulled = false;
   lightMarkers.renderOrder = 11;
   scene.add(lightMarkers);
+  const cameraHelpers = new THREE.Group();
+  scene.add(cameraHelpers);
+  const markers = new Map();
+  const cameraBody = new THREE.BoxGeometry(.27, .17, .19);
+  const cameraLens = new THREE.ConeGeometry(.095, .15, 4);
+  cameraLens.rotateX(Math.PI / 2);
+  const cameraHandle = new THREE.BoxGeometry(.10, .055, .09);
+  const screen = new THREE.PlaneGeometry(.42, .255);
+  const cameraColor = new THREE.MeshBasicMaterial({ color: '#87bdff', toneMapped: false });
+  const frameColor = new THREE.LineBasicMaterial({ color: '#9ccaff', transparent: true, opacity: .75, depthWrite: false });
+  const screenColor = new THREE.MeshBasicMaterial({
+    color: '#87bdff', transparent: true, opacity: .27, side: THREE.DoubleSide, depthWrite: false
+  });
+  const screenEdges = new THREE.BufferGeometry().setFromPoints(
+    [[-.21, -.1275], [.21, -.1275], [.21, .1275], [-.21, .1275]].flatMap(([x, y]) =>
+      [new THREE.Vector3(0, 0, -.14), new THREE.Vector3(x, y, -.7)])
+  );
+  const screenBorder = new THREE.EdgesGeometry(screen);
+
+  function cameraMarker(cameraObject) {
+    if (markers.has(cameraObject)) return markers.get(cameraObject);
+    const marker = new THREE.Group();
+    const body = new THREE.Mesh(cameraBody, cameraColor);
+    const lens = new THREE.Mesh(cameraLens, cameraColor);
+    lens.position.z = -.145;
+    const handle = new THREE.Mesh(cameraHandle, cameraColor);
+    handle.position.y = .103;
+    const window = new THREE.Mesh(screen, screenColor);
+    window.position.z = -.7;
+    const edges = new THREE.LineSegments(screenBorder, frameColor);
+    edges.position.z = -.7;
+    for (const part of [body, lens, handle]) part.userData.camera = cameraObject;
+    marker.add(body, lens, handle, window, edges, new THREE.LineSegments(screenEdges, frameColor));
+    cameraHelpers.add(marker);
+    markers.set(cameraObject, marker);
+    return marker;
+  }
   const visibleLights = [];
   const samplePreview = element.querySelector('#sample-preview');
   let previewPosition;
@@ -390,6 +445,9 @@ export function createViewport(
       previewShot && shotObject
         ? undefined
         : ray.intersectObject(lightMarkers)[0];
+    const cameraHit = cameraHelpers.visible && ray.intersectObjects(
+      [...markers.values()].flatMap(marker => marker.children.slice(0, 3)), false
+    )[0];
     const hit = withSceneCuts(root, () => ray
       .intersectObjects(root.children, true)
       .find(({ object, face }) => {
@@ -400,7 +458,9 @@ export function createViewport(
           object.material[face?.materialIndex]?.visible !== false
         );
       }));
-    const object = light ? visibleLights[light.index] : hit?.object;
+    const object = cameraHit && (!hit || cameraHit.distance < hit.distance)
+      ? cameraHit.object.userData.camera
+      : light ? visibleLights[light.index] : hit?.object;
     if (event.button === 2) {
       if (object) context?.(event, object);
     } else select(object, event.shiftKey);
@@ -489,9 +549,11 @@ export function createViewport(
     if (referenceOutline.visible) referenceOutline.setFromObject(alignment);
     pivots.visible = !clean && showPivots;
     lightMarkers.visible = !clean && (!useShot || !shotObject);
+    cameraHelpers.visible = lightMarkers.visible;
     if (!clean) {
       const positions = [];
       const lights = [];
+      const currentCameras = new Set();
       visibleLights.length = 0;
       root.updateMatrixWorld();
       root.traverseVisible((object) => {
@@ -501,12 +563,22 @@ export function createViewport(
         ) {
           point.setFromMatrixPosition(object.matrixWorld);
           if (pivots.visible) positions.push(point.x, point.y, point.z);
-          if (object.isLight || object.isCamera) {
+          if (object.isLight) {
             visibleLights.push(object);
             lights.push(point.x, point.y, point.z);
           }
+          if (object.isCamera) {
+            currentCameras.add(object);
+            const marker = cameraMarker(object);
+            marker.position.copy(point);
+            object.getWorldQuaternion(marker.quaternion);
+          }
         }
       });
+      for (const [object, marker] of markers) if (!currentCameras.has(object)) {
+        marker.removeFromParent();
+        markers.delete(object);
+      }
       updateMarkers(lightMarkers, lights);
       if (pivots.visible) updateMarkers(pivots, positions);
     }
@@ -580,10 +652,21 @@ export function createViewport(
       orbit.enabled = !(preview && object) && !transform.dragging;
       transform.enabled = !(preview && object);
     },
-    copyDefaultCamera(object) {
+    focus(objects) {
+      const bounds = new THREE.Box3();
+      for (const object of objects) {
+        const item = new THREE.Box3().setFromObject(object, true);
+        if (item.isEmpty()) bounds.expandByPoint(object.getWorldPosition(new THREE.Vector3()));
+        else bounds.union(item);
+      }
+      const { center, radius } = bounds.getBoundingSphere(new THREE.Sphere());
+      const vertical = THREE.MathUtils.degToRad(camera.fov / 2);
+      const halfFov = Math.min(vertical, Math.atan(Math.tan(vertical) * camera.aspect));
+      const distance = THREE.MathUtils.clamp(radius * 1.2 / Math.sin(halfFov), orbit.minDistance * 1.5, orbit.maxDistance);
+      const direction = camera.position.clone().sub(orbit.target).normalize();
+      orbit.target.copy(center);
+      camera.position.copy(center).addScaledVector(direction, distance);
       orbit.update();
-      object.position.copy(camera.position);
-      object.quaternion.copy(camera.quaternion);
     },
     highlightEdges,
     reset() {

@@ -1,4 +1,4 @@
-import { Box3, Matrix4 } from 'three';
+import { Box3, Matrix4, Vector3 } from 'three';
 import { Brush, Evaluator, SUBTRACTION, computeMeshVolume } from 'three-bvh-csg';
 
 const evaluator = new Evaluator();
@@ -19,12 +19,26 @@ export function releaseCut(object) {
 
 function cutMesh(object, candidates) {
   const inverse = object.matrixWorld.clone().invert();
-  const sources = candidates.map(({ mesh }) => ({
-    mesh,
-    matrix: new Matrix4().multiplyMatrices(inverse, mesh.matrixWorld)
-  }));
-  const signature = [object.geometry.uuid, ...sources.flatMap(({ mesh, matrix }) => [
-    mesh.geometry.uuid, ...matrix.elements
+  const sources = candidates.map(({ mesh }) => {
+    const matrix = new Matrix4().multiplyMatrices(inverse, mesh.matrixWorld);
+    const bounds = mesh.geometry.boundingBox.clone().applyMatrix4(matrix);
+    const target = object.geometry.boundingBox;
+    const center = bounds.getCenter(new Vector3());
+    const size = bounds.getSize(new Vector3());
+    const stretch = new Vector3(1, 1, 1);
+    for (const axis of ['x', 'y', 'z']) {
+      const epsilon = Math.max(1e-7, (target.max[axis] - target.min[axis]) * 0.000002);
+      if (size[axis] > epsilon && (
+        Math.abs(bounds.max[axis] - target.max[axis]) <= epsilon ||
+        Math.abs(bounds.min[axis] - target.min[axis]) <= epsilon
+      )) stretch[axis] += 2 * epsilon / size[axis];
+    }
+    const transform = new Matrix4().makeScale(...stretch).setPosition(center.clone().multiply(stretch).negate().add(center));
+    return { mesh, matrix: matrix.premultiply(transform) };
+  });
+  const geometryVersion = mesh => [mesh.geometry.uuid, mesh.geometry.attributes.position.version];
+  const signature = [...geometryVersion(object), ...sources.flatMap(({ mesh, matrix }) => [
+    ...geometryVersion(mesh), ...matrix.elements
   ])].join(':');
   const previous = results.get(object);
   if (previous?.signature === signature) return previous;
