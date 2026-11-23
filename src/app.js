@@ -46,6 +46,7 @@ import { applyTextEdit, isTextGroup, planLetterEntrance, planTextEdit, textGroup
 import { applyKeyTiming, planKeyTiming } from './key-timing.js';
 import { boneDefaults, rigLinks } from './rig.js';
 import { tiles } from './tiles.js';
+import { applyReparenting, reparentPlans } from './hierarchy.js';
 import {
   axes,
   axisHeading,
@@ -55,6 +56,19 @@ import {
 
 const $ = (id) => document.getElementById(id);
 const all = (selector) => [...document.querySelectorAll(selector)];
+const editableField = 'textarea, input:not([type]), input[type="text"], input[type="number"], input[type="search"], input[type="tel"], input[type="url"], input[type="email"], input[type="password"]';
+let clickedField;
+document.addEventListener('focusout', event => {
+  if (event.target === clickedField) clickedField = undefined;
+});
+document.addEventListener('pointerdown', event => {
+  const field = event.target;
+  if (event.button !== 0 || !field.matches(editableField) || field.disabled || field === clickedField) return;
+  event.preventDefault();
+  field.focus({ preventScroll: true });
+  clickedField = field;
+  field.select();
+});
 const root = new Group();
 const modes = ['select', 'translate', 'rotate', 'scale'];
 const fps = 30;
@@ -1707,6 +1721,38 @@ function canGroup() {
   );
 }
 
+function canParent() {
+  const objects = [...selected];
+  const parent = objects[0];
+  return objects.length >= 2 && parent.isMesh &&
+    independentSelection().length === objects.length;
+}
+
+function changeHierarchy(objects, parent, detach = false) {
+  let plans;
+  try {
+    plans = reparentPlans(objects, parent);
+  } catch (error) {
+    status(error.message);
+    toast(error.message, 'warning');
+    return;
+  }
+  edit(() => {
+    const previousParents = new Set(objects.map(object => object.parent));
+    applyReparenting(plans);
+    for (const object of previousParents)
+      if (object.userData.type === 'group') fitPivot(object);
+    for (const object of objects) fitParentPivots(object);
+    if (!detach) {
+      sceneExpanded = true;
+      collapsedGroups.delete(parent.userData.objectId);
+      select(parent);
+    } else select(objects[0]);
+    status(detach ? 'Üst nesne bağlantısı kaldırıldı.' :
+      parent.name + ', ' + objects.length + ' nesnenin üst nesnesi oldu.');
+  }, detach ? 'Üst nesneden ayır' : 'Hiyerarşi kur');
+}
+
 function independentSelection() {
   return [...selected].filter((object) => {
     for (let parent = object.parent; parent; parent = parent.parent) {
@@ -1725,7 +1771,7 @@ function refresh() {
   updateTimeline();
   setMode(mode);
   $('group').disabled = !canGroup();
-  $('join').disabled = !canGroup() || ![...selected].every(object => object.isMesh);
+  $('join').disabled = !canGroup() || ![...selected].every(object => object.isMesh && !object.children.length);
   $('ungroup').disabled = single()?.userData.type !== 'group';
   $('delete').disabled = selected.size === 0;
   $('add-key').disabled = selected.size === 0;
@@ -1744,6 +1790,17 @@ function showPresetScene(show) {
 }
 
 presets = installPresets({
+  selectionActions: {
+    canGroup: object => selected.has(object) && canGroup(),
+    group: () => groupSelection(),
+    canParent: object => selected.has(object) && canParent(),
+    parent: () => {
+      const [parent, ...children] = selected;
+      changeHierarchy(children, parent);
+    },
+    canUnparent: object => object.parent?.isMesh,
+    unparent: object => changeHierarchy([object], object.parent.parent, true)
+  },
   textActions: {
     matches: isTextGroup,
     edit: object => openTextDialog(object),
@@ -2343,12 +2400,13 @@ $('scene-name').onkeydown = event => {
   if (event.key === 'Escape') event.currentTarget.value = sceneName;
   if (event.key === 'Enter' || event.key === 'Escape') event.currentTarget.blur();
 };
-$('group').onclick = () => {
+function groupSelection() {
   if (!canGroup()) return;
   setPlaying(false);
   edit(() => select(groupObjects([...selected])), 'Cisimleri grupla');
   status('Nesneler gruplandı.');
-};
+}
+$('group').onclick = groupSelection;
 function mergeSelection(objects) {
   edit(() => {
     const mergedObjects = new Set(objects);

@@ -1,10 +1,14 @@
-import { Box3, Matrix4, Vector3 } from 'three';
-import { Brush, Evaluator, SUBTRACTION, computeMeshVolume } from 'three-bvh-csg';
+import { Box3, BufferGeometry, Float32BufferAttribute, Matrix4, Vector3 } from 'three';
+import { Brush, Evaluator, HOLLOW_SUBTRACTION, SUBTRACTION, computeMeshVolume } from 'three-bvh-csg';
 import { elasticFits } from './elastic.js';
+import { hierarchyRoot } from './hierarchy.js';
 
 const evaluator = new Evaluator();
 const results = new WeakMap();
 const elasticResults = new WeakMap();
+const hierarchyResults = new WeakMap();
+const empty = new BufferGeometry().setAttribute('position', new Float32BufferAttribute([], 3)).setIndex([]);
+empty.setDrawRange(0, 0);
 evaluator.useCDTClipping = true;
 evaluator.removeUnusedMaterials = false;
 
@@ -17,6 +21,7 @@ function brushFor(geometry, material, matrix) {
 export function releaseCut(object) {
   releaseCachedCut(results, object);
   releaseCachedCut(elasticResults, object);
+  releaseCachedCut(hierarchyResults, object);
 }
 
 function releaseCachedCut(cache, object) {
@@ -87,6 +92,59 @@ function cutMesh(object, candidates, cache) {
   return result;
 }
 
+function clipHierarchy(boxes, cuts, cutters) {
+  const earlier = new Map();
+  for (const { mesh, bounds } of boxes) {
+    const root = hierarchyRoot(mesh);
+    const previous = hierarchyResults.get(mesh);
+    if (!root || mesh.userData.negative || cutters.has(mesh)) {
+      if (previous) releaseCachedCut(hierarchyResults, mesh);
+      continue;
+    }
+    if (!earlier.has(root)) earlier.set(root, []);
+    const family = earlier.get(root);
+    const overlap = family.filter(item => item.bounds.clone().expandByScalar(1e-6).intersectsBox(bounds));
+    family.push({ mesh, bounds });
+    if (!overlap.length) {
+      if (previous) releaseCachedCut(hierarchyResults, mesh);
+      continue;
+    }
+    const source = cuts.get(mesh) ?? mesh.geometry;
+    const inverse = new Matrix4().copy(mesh.matrixWorld).invert();
+    const blockers = overlap.map(item => {
+      const geometry = item.mesh.geometry;
+      const center = geometry.boundingBox.getCenter(new Vector3());
+      const expansion = new Matrix4().makeScale(1.00001, 1.00001, 1.00001).setPosition(center.multiplyScalar(-.00001));
+      const matrix = new Matrix4().multiplyMatrices(inverse, item.mesh.matrixWorld).multiply(expansion);
+      return { geometry, matrix };
+    });
+    const signature = [source.uuid, source.attributes.position.version,
+      ...blockers.flatMap(({ geometry, matrix }) => [geometry.uuid, geometry.attributes.position.version, ...matrix.elements])].join(':');
+    if (previous?.signature === signature) {
+      cuts.set(mesh, previous.geometry);
+      continue;
+    }
+    releaseCachedCut(hierarchyResults, mesh);
+    let geometry = source;
+    for (const blocker of blockers) {
+      if (!geometry.drawRange.count) break;
+      const materials = mesh.material;
+      const obstacle = brushFor(blocker.geometry, Array.isArray(materials) ? materials[0] : materials, blocker.matrix);
+      const output = evaluator.evaluate(brushFor(geometry, materials), obstacle, HOLLOW_SUBTRACTION);
+      if (Array.isArray(materials)) {
+        for (const group of output.geometry.groups)
+          group.materialIndex = Math.max(0, materials.indexOf(output.material[group.materialIndex]));
+      }
+      if (geometry !== source) geometry.dispose();
+      geometry = output.geometry;
+    }
+    if (geometry !== source) {
+      hierarchyResults.set(mesh, { signature, geometry });
+      cuts.set(mesh, geometry);
+    }
+  }
+}
+
 export function sceneCuts(root, selection, includeElastic = !selection) {
   const cuts = new Map();
   const cutters = new Set();
@@ -99,10 +157,14 @@ export function sceneCuts(root, selection, includeElastic = !selection) {
       meshObjects.push(mesh);
     });
   }
-  if (!meshObjects.some(mesh => mesh.userData.negative || (includeElastic && mesh.userData.elastic))) {
+  const hierarchy = includeElastic && !selection && meshObjects.some(mesh => hierarchyRoot(mesh));
+  if (!hierarchy && !meshObjects.some(mesh => mesh.userData.negative || (includeElastic && mesh.userData.elastic))) {
     for (const mesh of meshObjects) {
       releaseCachedCut(results, mesh);
-      if (includeElastic) releaseCachedCut(elasticResults, mesh);
+      if (includeElastic) {
+        releaseCachedCut(elasticResults, mesh);
+        releaseCachedCut(hierarchyResults, mesh);
+      }
     }
     return { cuts, cutters };
   }
@@ -115,6 +177,7 @@ export function sceneCuts(root, selection, includeElastic = !selection) {
   const positives = boxes.filter(({ mesh }) => !mesh.userData.negative);
   const intersection = new Box3();
   for (const { mesh, bounds } of boxes) {
+    if (includeElastic && !hierarchy) releaseCachedCut(hierarchyResults, mesh);
     if (includeElastic && !mesh.userData.elastic) releaseCachedCut(elasticResults, mesh);
     const intruders = includeElastic && mesh.userData.elastic
       ? positives.filter(item => item.mesh !== mesh && item.bounds.intersectsBox(bounds) &&
@@ -133,23 +196,32 @@ export function sceneCuts(root, selection, includeElastic = !selection) {
     if (result.geometry) cuts.set(mesh, result.geometry);
     for (const cutter of result.used) if (cutter.userData.negative) cutters.add(cutter);
   }
+  if (hierarchy) clipHierarchy(boxes, cuts, cutters);
   return { cuts, cutters };
 }
 
 export function withSceneCuts(root, draw) {
   const { cuts, cutters } = sceneCuts(root);
-  const originals = [...cuts].map(([mesh, geometry]) => {
+  const replacements = new Map(cuts);
+  for (const mesh of cutters) if (mesh.children.length) replacements.set(mesh, empty);
+  const originals = [...replacements].map(([mesh, geometry]) => {
     const original = mesh.geometry;
+    if (geometry === hierarchyResults.get(mesh)?.geometry && original.type === 'BoxGeometry')
+      mesh.rigBoxGeometry = original;
     mesh.geometry = geometry;
     return [mesh, original];
   });
-  const suppressed = [...cutters, ...[...cuts].filter(([, geometry]) => !geometry.drawRange.count).map(([mesh]) => mesh)];
+  const suppressed = [...cutters, ...[...cuts].filter(([, geometry]) => !geometry.drawRange.count).map(([mesh]) => mesh)]
+    .filter(mesh => !mesh.children.length);
   const visibility = suppressed.map(mesh => [mesh, mesh.visible]);
   suppressed.forEach(mesh => { mesh.visible = false; });
   try {
     return draw();
   } finally {
-    for (const [mesh, geometry] of originals) mesh.geometry = geometry;
+    for (const [mesh, geometry] of originals) {
+      mesh.geometry = geometry;
+      delete mesh.rigBoxGeometry;
+    }
     for (const [mesh, visible] of visibility) mesh.visible = visible;
   }
 }

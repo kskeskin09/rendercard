@@ -863,7 +863,13 @@ kbd {
 .object-menu {
   position: fixed;
   right: auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: max-content;
+  max-width: calc(100vw - 12px);
 }
+.object-menu button { width: auto; white-space: normal; text-align: left; }
 .preset-editor {
   padding: 10px;
   margin-top: 12px;
@@ -1417,7 +1423,7 @@ textarea,
 .opacity-fields input[type='range'] { padding: 0; accent-color: #78952c; }
 #follow-distance { display: block; color: var(--muted); margin: 6px 0; font-size: 11px; }
 #follow-rebase { min-height: 25px; font-size: 11px; }
-#view-camera-menu { min-width: 126px; max-height: 240px; overflow-y: auto; }
+#view-camera-menu { max-height: 240px; overflow-y: auto; }
 
 #scene-name {
   width: clamp(6rem, 19vw, 15rem);
@@ -1435,12 +1441,10 @@ textarea,
 .sidebar .panel-heading { gap: 4px; }
 .sidebar .panel-heading h2 { flex: 1; }
 .sidebar .panel-heading .preset-wrap > button { padding-inline: 4px; }
-#timeline-menu {
-  width: 154px;
-}
 #timeline-camera-field {
   padding: 4px 5px;
 }
+#timeline-camera-field select { max-width: 100%; }
 .object-row.alignment-reference { background: #cddfaf; color: #27351a; }
 .negative-badge { font-weight: 800; color: #754aa2; }
 #render-preview {

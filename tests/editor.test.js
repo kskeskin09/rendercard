@@ -1095,3 +1095,56 @@ test('a bent box joint closes both triangular side gaps and clips overlapping fa
     }
   }
 });
+
+test('a deeply bent overlapping box joint finds an exposed side bridge', async () => {
+  const { boneSurface } = await import('../src/rig.js');
+  const base = makeObject('box');
+  const beam = makeObject('box');
+  base.scale.set(1.25, 1.5, 1);
+  beam.scale.set(3.5, 1, 1);
+  beam.position.set(.35, .25, 0);
+  beam.rotation.z = -65 * Math.PI / 180;
+  base.updateMatrixWorld(true);
+  beam.updateMatrixWorld(true);
+  const bridge = boneSurface(base, beam, 100);
+  assert(bridge?.geometry.attributes.position.count >= 6);
+  for (const array of [bridge.geometry.attributes.position.array, bridge.geometry.attributes.normal.array])
+    assert(array.every(Number.isFinite));
+});
+
+test('mesh hierarchy preserves placement and keys, follows parent rotation and clips lower coplanar faces', async () => {
+  const { applyReparenting, reparentPlans } = await import('../src/hierarchy.js');
+  const { sceneCuts } = await import('../src/boolean-cuts.js');
+  const { Mesh, MeshBasicMaterial, Raycaster } = await import('three');
+  const root = new Group();
+  const parent = makeObject('box', 'Üst');
+  const child = makeObject('box', 'Alt');
+  parent.scale.setScalar(2);
+  child.scale.set(1, 2, 2);
+  child.position.x = 1;
+  root.add(parent, child);
+  writeKey(child, 5);
+  applyReparenting(reparentPlans([child], parent));
+  assert.equal(child.parent, parent);
+  close(child.getWorldPosition(new Vector3()).x, 1);
+  close(child.userData.keys[0].position[0], .5);
+  assert.throws(() => reparentPlans([parent], child), /kendi altına/);
+  const { cuts } = sceneCuts(root);
+  assert(!cuts.has(parent));
+  const outside = new Mesh(cuts.get(child), new MeshBasicMaterial());
+  outside.matrix.copy(child.matrixWorld);
+  outside.matrixAutoUpdate = false;
+  outside.updateMatrixWorld(true);
+  const hits = x => new Raycaster(new Vector3(x, 0, 5), new Vector3(0, 0, -1)).intersectObject(outside);
+  assert.equal(hits(.75).length, 0);
+  assert(hits(1.25).length > 0);
+  parent.rotation.z = Math.PI / 2;
+  close(child.getWorldPosition(new Vector3()).y, 1);
+  child.rotation.z += .1;
+  close(parent.rotation.z, Math.PI / 2);
+  assert.equal(decodeProject(encodeProject(root, 120)).objects[0].children[0].name, 'Alt');
+  const before = child.getWorldPosition(new Vector3());
+  applyReparenting(reparentPlans([child], root));
+  close(child.getWorldPosition(new Vector3()).distanceTo(before), 0);
+  assert.equal(child.parent, root);
+});

@@ -1,6 +1,6 @@
 {
   "name": "rendercard",
-  "version": "0.17.2",
+  "version": "0.18.0",
   "private": true,
   "type": "module",
   "description": "Türkçe 3B sahne, render ve animasyon editörü",

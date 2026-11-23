@@ -6,6 +6,7 @@ import { slideMovement } from './camera-follow.js';
 import { translateWorld } from './spatial.js';
 import { sceneCuts } from './boolean-cuts.js';
 import { elasticFits } from './elastic.js';
+import { relatedHierarchy } from './hierarchy.js';
 
 const tolerance = 0.00001;
 const stationary = new Vector3();
@@ -161,6 +162,7 @@ function pairs(root, moving, any = false, ignored = []) {
   const others = collect(root, excluded, cuts);
   return movingShapes.flatMap((a) =>
     others.filter((b) => {
+      if (relatedHierarchy(a.object, b.object)) return false;
       if (a.object.isMesh && b.object.isMesh &&
           Boolean(a.object.userData.negative) !== Boolean(b.object.userData.negative)) return false;
       return any || b.solid || a.solid;

@@ -39,6 +39,7 @@ Kaydedilmemiş proje değişiklikleri varsa Windows uygulaması çıkarken onay 
 
 ## Şekil ve yerleşim
 
+- **Shift** ile birden çok nesne seçip seçimdeki bir nesneye sağ tıklayın. **Grupla**, aynı düzeydeki nesnelere ortak bir grup ekler. **Hiyerarşi kur**, ilk seçilen cismi üst nesne yapar. Alt nesneler üst nesnenin dönüşümünü izler. Aynı hiyerarşide örtüşen yüzeylerde üstteki nesne görünür. **Üst nesneden ayır**, alt nesneyi mevcut pozuyla bir üst düzeye çıkarır.
 - **3B Metin** ile sahneye yazı ekleyin ve ekleme penceresinde kalınlık ile kenar yumuşatmayı ayarlayın. Her ekleme ayrı grup oluşturur. Sahne listesindeki **+** ve **−** grubun harflerini açar veya kapatır. Harfi seçip **Geometri** bölümünden kalınlığını ve yumuşatmasını yeniden ayarlayabilirsiniz. Konum, dönüş ve boyut için grubun veya tek harfin karelerini oluşturabilirsiniz.
 - Metin grubuna sağ tıklayıp **Metni düzenle** ile yazıyı değiştirin. Eşleşen harflerin ayarları ve kareleri korunur. Kaldırılan harfin animasyonu varsa onay istenir. **Harfleri sırayla canlandır** seçeneğiyle yükselme, dönüş veya büyüme kareleri oluşturun. Başlangıç karesini, harfler arasındaki gecikmeyi ve her harfin hareket süresini belirleyebilirsiniz.
 - Tek cismi boyutlandırma tutamacı karşı kenarı sabit tutar. Sürüklerken **Shift** iki kenarı eşit miktarda değiştirir. Sayısal **Boyut** alanı seçili merkez noktasını sabit tutar. Çoklu seçimde **Shift** ile sürüklemek cisimleri ortak orta noktaya göre taşır, döndürür veya boyutlandırır. Zincir, sayısal boyutların X, Y ve Z oranını korur.
@@ -61,7 +62,7 @@ Nesnenin **İskelet → İskelet bağı** ayarı seçili merkezde bir nokta olu�
 Her kemiğin **Doku düzeltme** ve yüzey ayarları kemiğin sağ tık menüsündedir. Varsayılan yüzey iki uçtaki malzemeleri karıştırır. Özel renk veya tile ve yüzey genişliği seçilebilir.
 
 Nesneler hareket ettikçe kemik onları takip eder ve aradaki görünür boşluk için doku köprüsü yeniden hesaplanır. İskelet işaretleri düzenleme görünümünde, doku köprüsü de PNG ve video renderında görünür. Bağlantılar proje dosyasında saklanır.
-Düz kenarlı kutularda köprü karşılıklı yüzlerin köşelerini birbirine bağlar. Kutu büküldüğünde oluşan yan boşlukları kapatır ve cisimlerin içinde kalan yüzeyler kesilir.
+Düz kenarlı kutularda köprü karşılıklı yüzlerin köşelerini birbirine bağlar. Kutu büküldüğünde oluşan yan boşlukları kapatır ve cisimlerin içinde kalan yüzeyler kesilir. Hareket sırasında karşılıklı uçlar iç içe geçtiğinde, köprü kurulabilecek en yakın açık yüzleri arar.
 
 ## Animasyon sahneleri
 

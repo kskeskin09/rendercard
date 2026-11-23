@@ -8,7 +8,7 @@ export function localBounds(object) {
   const result = new Box3();
   const point = new Vector3();
   object.traverse((child) => {
-    if (!child.isMesh) return;
+    if (!child.isMesh || (object.isMesh && child !== object)) return;
     matrix.multiplyMatrices(local, child.matrixWorld);
     const positions = child.geometry.attributes.position;
     for (let i = 0; i < positions.count; i++) {
@@ -95,14 +95,14 @@ export function fitPivot(object) {
       const { origin } = object.userData.textLayout;
       object.userData.textLayout.origin = new Vector3().fromArray(origin).sub(delta).toArray();
     }
-    for (const child of object.children) {
-      child.position.sub(delta);
-      for (const key of posesOf(child)) {
-        key.position = new Vector3()
-          .fromArray(key.position)
-          .sub(delta)
-          .toArray();
-      }
+  }
+  for (const child of object.children) {
+    child.position.sub(delta);
+    for (const key of posesOf(child)) {
+      key.position = new Vector3()
+        .fromArray(key.position)
+        .sub(delta)
+        .toArray();
     }
   }
 }
@@ -113,7 +113,7 @@ export function fitParentPivots(object) {
     parent?.userData.pivot;
     parent = parent.parent
   ) {
-    fitPivot(parent);
+    if (!parent.isMesh) fitPivot(parent);
   }
 }
 

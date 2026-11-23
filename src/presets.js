@@ -10,6 +10,7 @@ export function installPresets({
   deleteObject,
   duplicateObject,
   focusObject,
+  selectionActions,
   textActions,
   status
 }) {
@@ -91,6 +92,8 @@ export function installPresets({
     }
   };
   for (const [id, run] of [['context-duplicate', duplicateObject], ['context-focus', focusObject],
+    ['context-group', selectionActions.group], ['context-parent', selectionActions.parent],
+    ['context-unparent', selectionActions.unparent],
     ['context-edit-text', textActions.edit], ['context-animate-text', textActions.animate]]) {
     $(id).onclick = () => {
       $('object-menu').hidden = true;
@@ -173,6 +176,9 @@ export function installPresets({
     $('object-to-preset').hidden = kind !== 'object';
     $('context-duplicate').hidden = kind !== 'object';
     $('context-focus').hidden = kind !== 'object';
+    $('context-group').hidden = kind !== 'object' || !selectionActions.canGroup(value);
+    $('context-parent').hidden = kind !== 'object' || !selectionActions.canParent(value);
+    $('context-unparent').hidden = kind !== 'object' || !selectionActions.canUnparent(value);
     const hasText = kind === 'object' && textActions.matches(value);
     $('context-edit-text').hidden = !hasText;
     $('context-animate-text').hidden = !hasText || !value.children.some(child => child.userData.type === 'letter');

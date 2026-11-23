@@ -69,7 +69,7 @@ export const types = {
   camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 16;
+export const projectVersion = 17;
 export const shapeSides = [3, 4, 5, 6, 8, 16, 32, 64];
 export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid'].includes(type);
 const channels = ['position', 'rotation', 'scale'];
@@ -760,7 +760,7 @@ export function decodeProject(project) {
             ([id, keys]) => id !== 'main' && validClipId(id) && validKeys(keys)
           ))) ||
       (data.restPose != null && !validPose(data.restPose)) ||
-      (data.type !== 'group' && data.children.length > 0) ||
+      (data.children.length > 0 && !isPrimitive(data.type) && !['group', 'mesh', 'letter'].includes(data.type)) ||
       (data.type === 'camera' &&
         (typeof data.cameraId !== 'string' ||
           !/^[a-z0-9-]{1,64}$/i.test(data.cameraId) ||
@@ -817,7 +817,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, projectVersion].includes(project?.version) ||
     (project.renderSize != null && !validRenderSize(project.renderSize)) ||
     (project.name != null && (typeof project.name !== 'string' || project.name.length > 80 || !project.name.trim())) ||
     !validFrame(project.duration) ||
