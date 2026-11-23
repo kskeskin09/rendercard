@@ -3,7 +3,7 @@ import { changePivot, groundObject } from './spatial.js';
 import { isPrimitive, shapeSides, setDetail, updateMeshSurface } from './model.js';
 import { colorMarkup, bindColor } from './color-editor.js';
 import { rotationPaths } from './motion.js';
-import { speedMarkup, bindSpeed, describeSpeedGraph } from './speed-graph.js';
+import { speedMarkup, bindSpeed } from './speed-graph.js';
 import { axes, axisHeading, axisRow } from './inspector-grid.js';
 import { orbitPlanes } from './orbit-motion.js';
 
@@ -12,6 +12,7 @@ const choices = [
   ['En üst', 'Orta', 'En alt'],
   ['Sol', 'Orta', 'Sağ']
 ];
+const sizeCurveHint = 'Anahtar kareler hedef boyutu belirler. Grafik, büyüme ya da küçülmenin iki kare arasındaki zamana nasıl yayıldığını ayarlar.';
 const options = (entries) =>
   entries
     .map(
@@ -157,8 +158,7 @@ export function settingsMarkup(object) {
     '<label id="orbit-far-field" class="field" hidden>En uzak (m)<input type="number" id="orbit-far" min="0.01" max="1000" step="any"></label></div>' +
     speedMarkup('orbit', 'Yörünge') +
     '<p class="selection-tip">Yörünge grafiği tur içindeki ilerlemeyi değiştirir. Periyot sabit kalır.</p></div>' +
-    speedMarkup('linear', 'Konum ve boyut') +
-    '<p id="size-curve-hint" class="selection-tip" hidden>Anahtar kareler cismin hangi boyuta ulaşacağını belirler. Bu grafik, boyut değişiminin iki kare arasındaki zamana nasıl yayıldığını ayarlar.</p>' +
+    speedMarkup('linear', 'Konum') +
     (!object.isLight ? '<label class="field">Dönüş hareketi<select id="rotation-motion"><option value="keys">Karelerle dönüş</option><option value="physics">Açısal ivme ve hız</option></select></label>' +
     '<div id="angular-physics" hidden><div class="axis-table">' + axisHeading() +
     axisRow('Açısal ivme <small>°/s²</small>', vectorFields('angular-acceleration', 'Açısal ivme')) +
@@ -166,7 +166,11 @@ export function settingsMarkup(object) {
     '</div><label class="field" title="Engelle temas eden eksenin açısal hızı tersine döner ve bu yüzde kadarını korur.">Açısal sekme (%)<input id="angular-bounce" type="number" min="0" max="100" step="any"></label></div>' +
     '<div id="angular-keys">' + speedMarkup('angular', 'Dönüş') +
     '<label class="field" title="Kısa veya uzun dönüş yolunu seç. Bir eksende belirli yönde ya da tam tur dönmek için açıları izle seçeneğini kullan.">Dönüş yolu<select id="rotation-path">' +
-    options(Object.entries(rotationPaths)) + '</select></label></div>' : '') + '</div>'
+    options(Object.entries(rotationPaths)) + '</select></label></div>' : '') +
+    (!object.isLight && !object.isCamera
+      ? speedMarkup('size', 'Boyut', 'Boyut değişim grafiği', sizeCurveHint) +
+        '<p id="size-curve-hint" class="selection-tip">' + sizeCurveHint + '</p>'
+      : '') + '</div>'
   );
 }
 
@@ -452,18 +456,11 @@ export function bindSettings(
   }
   const positionMode = $('position-motion');
   const linearCurve = panel.querySelector('[data-speed-curve="linear"]');
-  const sizeHint = $('size-curve-hint');
   function paintMotion() {
     positionMode.value = data.positionMode;
     $('physics-controls').hidden = data.positionMode !== 'physics';
     $('orbit-controls').hidden = data.positionMode !== 'orbit';
-    const sizeOnly = data.positionMode !== 'keys';
-    sizeHint.hidden = !sizeOnly;
-    if (sizeOnly) {
-      describeSpeedGraph(linearCurve, 'Boyut', 'Boyut değişim grafiği', sizeHint.textContent);
-    } else {
-      describeSpeedGraph(linearCurve, 'Konum ve boyut', 'Konum ve boyut hız grafiği');
-    }
+    linearCurve.hidden = data.positionMode !== 'keys';
   }
   paintMotion();
   $('position-motion').onchange = (event) => {
@@ -542,6 +539,8 @@ export function bindSettings(
     input.value = data.restitution * 100;
   };
   bindSpeed(linearCurve, data, 'speedProfile', edit, status);
+  const sizeCurve = panel.querySelector('[data-speed-curve="size"]');
+  if (sizeCurve) bindSpeed(sizeCurve, data, 'sizeSpeedProfile', edit, status);
   if ($('rotation-motion')) {
     const mode = $('rotation-motion');
     const repaint = () => {

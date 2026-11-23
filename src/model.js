@@ -59,7 +59,7 @@ export const types = {
   camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 11;
+export const projectVersion = 12;
 export const shapeSides = [3, 4, 5, 6, 8, 16, 32, 64];
 export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid'].includes(type);
 const channels = ['position', 'rotation', 'scale'];
@@ -96,6 +96,7 @@ const settingsDefaults = {
   orbit: defaultOrbit,
   sceneClip: null,
   speedProfile: null,
+  sizeSpeedProfile: null,
   rotationMode: 'keys',
   angularVelocity: [0, 0, 0],
   angularAcceleration: [0, 0, 0],
@@ -440,22 +441,18 @@ export function poseAt(object, frame, keys = object.userData.keys) {
   const a = keys[next - 1];
   const b = keys[next];
   const clock = (frame - a.frame) / (b.frame - a.frame);
-  const { easeIn, easeOut, acceleration, rotationPath, speedProfile } =
+  const { easeIn, easeOut, acceleration, rotationPath, speedProfile, sizeSpeedProfile } =
     object.userData;
-  const progress = (clock) =>
-    speedProfile
-      ? profileTime(clock, speedProfile)
-      : easedTime(clock, easeIn, easeOut);
-  const t = progress(clock);
+  const positionTime = speedProfile
+    ? profileTime(clock, speedProfile)
+    : easedTime(travelTime(clock, acceleration), easeIn, easeOut);
+  const sizeTime = sizeSpeedProfile
+    ? profileTime(clock, sizeSpeedProfile)
+    : easedTime(clock, easeIn, easeOut);
   const interpolate = (channel, t) =>
     a[channel].map((value, axis) => MathUtils.lerp(value, b[channel][axis], t));
-  object.position.fromArray(
-    interpolate(
-      'position',
-      speedProfile ? t : progress(travelTime(clock, acceleration))
-    )
-  );
-  object.scale.fromArray(interpolate('scale', t));
+  object.position.fromArray(interpolate('position', positionTime));
+  object.scale.fromArray(interpolate('scale', sizeTime));
   const angularTime = object.userData.angularSpeedProfile
     ? profileTime(clock, object.userData.angularSpeedProfile)
     : easedTime(clock, easeIn, easeOut);
@@ -591,10 +588,9 @@ export function decodeProject(project) {
     (data.physicsClip == null || validClipId(data.physicsClip)) &&
     (data.angularClip == null || validClipId(data.angularClip)) &&
     (data.sceneClip == null || validClipId(data.sceneClip)) &&
-    (data.speedProfile == null ||
-      (numericTuple(data.speedProfile) &&
-        data.speedProfile.every((value) => value >= 0 && value <= 200) &&
-        data.speedProfile.some(Boolean))) &&
+    [data.speedProfile, data.sizeSpeedProfile].every(profile =>
+      profile == null || (numericTuple(profile) &&
+        profile.every(value => value >= 0 && value <= 200) && profile.some(Boolean))) &&
     (data.hidden == null || typeof data.hidden === 'boolean') &&
     [data.easeIn, data.easeOut].every(
       (value) =>
@@ -688,6 +684,7 @@ export function decodeProject(project) {
         ? { ...source, tileColorMode: 'custom' }
         : source;
     const settings = { ...migratedTile(data) };
+    if (project.version < 12) settings.sizeSpeedProfile = data.speedProfile;
     if (project.version < 8) {
       if (data.type === 'mesh') settings.finish = 'parts';
       settings.angularSpeedProfile = data.speedProfile;
@@ -705,7 +702,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, projectVersion].includes(project?.version) ||
     (project.renderSize != null && !validRenderSize(project.renderSize)) ||
     (project.name != null && (typeof project.name !== 'string' || project.name.length > 80 || !project.name.trim())) ||
     !validFrame(project.duration) ||

@@ -849,3 +849,36 @@ test('the timeline keeps 240 frames or fewer visible and bounds panning', async 
   assert.deepEqual(timelineWindow(480, 0, 900), { start: 240, end: 480, span: 240 });
   assert.deepEqual(timelineWindow(120, 100, 30), { start: 30, end: 36, span: 6 });
 });
+
+test('size and position curves are independent and old projects keep their shared timing', () => {
+  const root = new Group();
+  const box = makeObject('box');
+  box.userData.speedProfile = [0, 100, 200];
+  root.add(box);
+  writeKey(box, 0);
+  box.position.x = 4;
+  box.scale.setScalar(3);
+  writeKey(box, 40);
+  const old = encodeProject(root, 120);
+  old.version = 11;
+  delete old.objects[0].sizeSpeedProfile;
+  const [loaded] = decodeProject(old).objects;
+  poseAt(loaded, 20);
+  close(loaded.position.x, 1);
+  close(loaded.scale.x, 1.5);
+
+  loaded.userData.sizeSpeedProfile = [200, 100, 0];
+  poseAt(loaded, 20);
+  close(loaded.position.x, 1);
+  close(loaded.scale.x, 2.5);
+  loaded.userData.speedProfile = [100, 100, 100];
+  poseAt(loaded, 20);
+  close(loaded.position.x, 2);
+  close(loaded.scale.x, 2.5);
+
+  root.clear();
+  root.add(loaded);
+  const [saved] = decodeProject(encodeProject(root, 120)).objects;
+  assert.deepEqual(saved.userData.sizeSpeedProfile, [200, 100, 0]);
+  assert.deepEqual(saved.userData.speedProfile, [100, 100, 100]);
+});
