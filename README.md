@@ -54,9 +54,11 @@ Kaydedilmemiş proje değişiklikleri varsa Windows uygulaması çıkarken onay 
 
 Zaman çizelgesindeki **Animasyonlar** menüsünden kanal ekleyip silebilirsiniz. **Düzenlenen animasyon** kareleri hangi kanala kaydedeceğinizi belirler. **Seçileni oynat** işaretlileri eşzamanlı, **Sırayla oynat** listedeki sırayla oynatır. **Toplu oynat** bütün kanalları kare 0'dan eşzamanlı başlatır. Bir nesne her animasyonda görünebilir veya tek bir sahneye ait olabilir. Birden çok işaretli kanal aynı anda aynı nesneye poz veriyorsa, çakışan aralıkta listede daha sonraki kanal önceliklidir.
 
-**Karelerle hareket** modunda ayrı konum ve dönüş grafikleri geçişin başlangıç, orta ve bitişindeki göreli hızı belirler. **Fiziksel ivme** modunda doğrusal başlangıç hızı (m/s) ve ivme (m/s²) dünya eksenlerinde ayarlanır. **Açısal ivme ve hız** modunda dönüş başlangıç hızı (°/s) ve ivmesi (°/s²) ayrı belirlenir. Zemin veya sabit katı bir engelle temasta doğrusal ve açısal sekme kendi yüzdelerini kullanır. İvme temas sonrasında da devam eder. Fiziksel hareket açıkken hız grafiği, anahtar kareli kanallara uygulanır.
+**Karelerle hareket** modunda konum ve boyut bir grafiği, dönüş ayrı bir grafiği kullanır. **Fiziksel ivme** modunda doğrusal başlangıç hızı (m/s) ve ivme (m/s²) dünya eksenlerinde ayarlanır. **Açısal ivme ve hız** modunda dönüş başlangıç hızı (°/s) ve ivmesi (°/s²) ayrı belirlenir. Zemin veya sabit katı bir engelle temasta doğrusal ve açısal sekme kendi yüzdelerini kullanır. İvme temas sonrasında da devam eder.
 
-**Konum hareketi → Yörünge** ile bir merkez nesnesi seçin. Merkez hareket ederse yörünge de onunla taşınır. Periyot bir turun saniye cinsinden süresidir. **Sabit** modunda tek yarıçap, **Değişken** modunda en yakın ve en uzak mesafe ayarlanır. Düzlem, yön ve başlangıç açısı konumu belirler. Yörünge hız grafiği tur içinde ilerlemeyi değiştirir ve periyodu korur. Anahtar kareler dönüş ve boyutu kontrol etmeye devam eder.
+**Konum hareketi → Yörünge** ile bir merkez nesnesi seçin. Merkez hareket ederse yörünge de onunla taşınır. Periyot bir turun saniye cinsinden süresidir. **Sabit** modunda tek yarıçap, **Değişken** modunda en yakın ve en uzak mesafe ayarlanır. Düzlem, yön ve başlangıç açısı konumu belirler. Yörünge hız grafiği tur içinde ilerlemeyi değiştirir ve periyodu korur.
+
+Yörünge ve fiziksel ivme modlarında **Boyut değişim grafiği** kullanılır. Anahtar kareler cismin hangi boyuta ulaşacağını belirler. Grafik, büyümenin veya küçülmenin bu iki kare arasına nasıl yayılacağını ayarlar. Cismin kendi dönüşü ayrı ayarlanır.
 
 **Zemine tepki verir** kutusu, nesnenin sahne zemini olan Y = 0 ile fiziksel temasını açar veya kapatır. Katı nesnelerle temas kendi ayarlarını kullanır.
 

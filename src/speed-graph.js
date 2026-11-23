@@ -1,18 +1,29 @@
 const labels = ['Başlangıç', 'Orta', 'Bitiş'];
 const xPositions = [18, 110, 202];
 const chartY = (value) => 84 - value * 0.36;
+const speedHint = 'Noktaları sürükle veya aşağıdaki yüzdeleri düzenle. Yüksek nokta geçişin o bölümünü hızlandırır.';
+const pointLabel = (name, label) => name + ' · ' + label + ' hızı (%)';
 
-export const speedMarkup = (kind, name) => `<div class="field" data-speed-curve="${kind}" title="Noktaları sürükle veya aşağıdaki yüzdeleri düzenle. Yüksek nokta geçişin o bölümünü hızlandırır.">
-  ${name} hız grafiği
+export const speedMarkup = (kind, name) => `<div class="field" data-speed-curve="${kind}" title="${speedHint}">
+  <span data-speed-caption>${name} hız grafiği</span>
   <svg class="speed-graph" viewBox="0 0 220 96" aria-label="Başlangıç, orta ve bitiş hızı grafiği">
     <path class="speed-grid" d="M18 12H202M18 48H202M18 84H202M18 12V84M110 12V84M202 12V84"/>
     <polyline class="speed-line"/>
     ${xPositions.map((x, index) => `<circle data-speed-point="${index}" cx="${x}" r="6"/>`).join('')}
   </svg>
   <div class="axis-fields speed-fields">
-    ${labels.map((label, index) => `<label><b>${label}</b><input data-speed-input="${index}" aria-label="${name} · ${label} hızı (%)" type="number" min="0" max="200" step="1"></label>`).join('')}
+    ${labels.map((label, index) => `<label><b>${label}</b><input data-speed-input="${index}" aria-label="${pointLabel(name, label)}" type="number" min="0" max="200" step="1"></label>`).join('')}
   </div>
 </div>`;
+
+export function describeSpeedGraph(panel, name, title, hint = speedHint) {
+  panel.title = hint;
+  panel.querySelector('[data-speed-caption]').textContent = title;
+  panel.querySelector('.speed-graph').setAttribute('aria-label', title);
+  panel.querySelectorAll('[data-speed-input]').forEach((input, index) => {
+    input.setAttribute('aria-label', pointLabel(name, labels[index]));
+  });
+}
 
 export function bindSpeed(panel, data, property, edit, status) {
   const graph = panel.querySelector('.speed-graph');

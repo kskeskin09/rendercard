@@ -3,7 +3,7 @@ import { changePivot, groundObject } from './spatial.js';
 import { isPrimitive, shapeSides, setDetail, updateMeshSurface } from './model.js';
 import { colorMarkup, bindColor } from './color-editor.js';
 import { rotationPaths } from './motion.js';
-import { speedMarkup, bindSpeed } from './speed-graph.js';
+import { speedMarkup, bindSpeed, describeSpeedGraph } from './speed-graph.js';
 import { axes, axisHeading, axisRow } from './inspector-grid.js';
 import { orbitPlanes } from './orbit-motion.js';
 
@@ -145,7 +145,7 @@ export function settingsMarkup(object) {
     ) +
     '</div>' +
     '<label class="field" title="Çarpışmada yüzeye dik hızın ters yönde korunan yüzdesi.">Sekme (%)<input id="object-bounce" type="number" min="0" max="100" step="any"></label>' +
-    '<p class="selection-tip">Konum fiziksel hızla hesaplanır. Alttaki grafik boyutu etkiler.</p></div>' +
+    '<p class="selection-tip">Konumu başlangıç hızı, ivme ve sekme belirler.</p></div>' +
     '<div id="orbit-controls" hidden>' +
     '<label class="field">Yörünge merkezi<select id="orbit-target"></select></label>' +
     '<label class="field" title="Bir tam turun saniye cinsinden süresi.">Periyot (s)<input type="number" id="orbit-period" min="0.1" max="3600" step="any"></label>' +
@@ -156,8 +156,9 @@ export function settingsMarkup(object) {
     '<div class="orbit-pair"><label class="field"><span id="orbit-near-label">Yarıçap (m)</span><input type="number" id="orbit-near" min="0.01" max="1000" step="any"></label>' +
     '<label id="orbit-far-field" class="field" hidden>En uzak (m)<input type="number" id="orbit-far" min="0.01" max="1000" step="any"></label></div>' +
     speedMarkup('orbit', 'Yörünge') +
-    '<p class="selection-tip">Grafik tur içindeki ilerlemeyi değiştirir. Periyot sabit kalır. Anahtar kareler dönüşü ve boyutu ayarlar.</p></div>' +
+    '<p class="selection-tip">Yörünge grafiği tur içindeki ilerlemeyi değiştirir. Periyot sabit kalır.</p></div>' +
     speedMarkup('linear', 'Konum ve boyut') +
+    '<p id="size-curve-hint" class="selection-tip" hidden>Anahtar kareler cismin hangi boyuta ulaşacağını belirler. Bu grafik, boyut değişiminin iki kare arasındaki zamana nasıl yayıldığını ayarlar.</p>' +
     (!object.isLight ? '<label class="field">Dönüş hareketi<select id="rotation-motion"><option value="keys">Karelerle dönüş</option><option value="physics">Açısal ivme ve hız</option></select></label>' +
     '<div id="angular-physics" hidden><div class="axis-table">' + axisHeading() +
     axisRow('Açısal ivme <small>°/s²</small>', vectorFields('angular-acceleration', 'Açısal ivme')) +
@@ -450,10 +451,19 @@ export function bindSettings(
     );
   }
   const positionMode = $('position-motion');
+  const linearCurve = panel.querySelector('[data-speed-curve="linear"]');
+  const sizeHint = $('size-curve-hint');
   function paintMotion() {
     positionMode.value = data.positionMode;
     $('physics-controls').hidden = data.positionMode !== 'physics';
     $('orbit-controls').hidden = data.positionMode !== 'orbit';
+    const sizeOnly = data.positionMode !== 'keys';
+    sizeHint.hidden = !sizeOnly;
+    if (sizeOnly) {
+      describeSpeedGraph(linearCurve, 'Boyut', 'Boyut değişim grafiği', sizeHint.textContent);
+    } else {
+      describeSpeedGraph(linearCurve, 'Konum ve boyut', 'Konum ve boyut hız grafiği');
+    }
   }
   paintMotion();
   $('position-motion').onchange = (event) => {
@@ -531,7 +541,7 @@ export function bindSettings(
       });
     input.value = data.restitution * 100;
   };
-  bindSpeed(panel.querySelector('[data-speed-curve="linear"]'), data, 'speedProfile', edit, status);
+  bindSpeed(linearCurve, data, 'speedProfile', edit, status);
   if ($('rotation-motion')) {
     const mode = $('rotation-motion');
     const repaint = () => {
