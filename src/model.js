@@ -44,6 +44,7 @@ import { updateOpacity } from './opacity.js';
 import { releaseCut, sceneCuts } from './boolean-cuts.js';
 import { skyTiles } from './sky-texture.js';
 import { defaultOrbit, orbitPlanes } from './orbit-motion.js';
+import { defaultLetterDepth, isLetter, letterGeometry, letterLayout, maximumLetterRadius } from './text-geometry.js';
 
 export const defaultAtmosphere = {
   defaultLight: false,
@@ -62,12 +63,13 @@ export const types = {
   prism: 'Üçgen prizma',
   pyramid: 'Piramit',
   group: 'Grup',
+  letter: 'Harf',
   mesh: 'Ağ',
   light: 'Işık',
   camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 13;
+export const projectVersion = 14;
 export const shapeSides = [3, 4, 5, 6, 8, 16, 32, 64];
 export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid'].includes(type);
 const channels = ['position', 'rotation', 'scale'];
@@ -136,7 +138,8 @@ export function geometry(type, detail = 24, settings = settingsDefaults) {
   const radii = settings.edgeRadii;
   const equalRadii = radii && radii.every((value) => value === radii[0]);
   const uniformRadius = equalRadii ? radii[0] : settings.radius;
-  if (type === 'sphere') result = new SphereGeometry(0.5, detail, detail / 2);
+  if (type === 'letter') result = letterGeometry(settings.glyph, settings.letterDepth, settings.radius);
+  else if (type === 'sphere') result = new SphereGeometry(0.5, detail, detail / 2);
   else if (type === 'prism' || type === 'pyramid' || (type === 'box' && (settings.sides ?? 4) !== 4)) {
     const sides = settings.sides ?? (type === 'prism' ? 3 : 4);
     const pointed = type === 'pyramid';
@@ -229,6 +232,20 @@ function configureMesh(object) {
   return object;
 }
 
+export function makeTextGroup(text, depth = defaultLetterDepth, radius = 0) {
+  const layout = letterLayout(text);
+  const name = text.trim().replace(/\s+/g, ' ').slice(0, 72);
+  const group = makeObject('group', name);
+  for (const { glyph, x, y } of layout) {
+    const letter = makeObject('letter', glyph, undefined, undefined, { glyph, letterDepth: depth, radius });
+    letter.position.set(x, y, 0);
+    group.add(letter);
+    fitPivot(letter);
+  }
+  fitPivot(group);
+  return group;
+}
+
 export function configurePointLight(light) {
   light.castShadow = true;
   light.shadow.mapSize.set(512, 512);
@@ -248,6 +265,10 @@ export function makeObject(
   data
 ) {
   const settings = settingsOf(data);
+  if (type === 'letter') {
+    settings.glyph = data.glyph;
+    settings.letterDepth = data.letterDepth ?? defaultLetterDepth;
+  }
   const object =
     type === 'group'
       ? new Group()
@@ -290,7 +311,8 @@ function bakedParts(object, buffer, matrix) {
   if (!buffer.drawRange.count) return [];
   const settings = Array.isArray(object.material) ? object.userData.parts : [object.userData];
   const surfaces = materialsOf(object);
-  const groups = surfaces.length === 1 ? [{ start: 0, count: buffer.drawRange.count, materialIndex: 0 }] : buffer.groups;
+  const groups = surfaces.length === 1
+    ? [{ start: 0, count: buffer.index.count, materialIndex: 0 }] : buffer.groups;
   const parts = new Map();
   for (const { start, count, materialIndex } of groups) {
     const source = settings[materialIndex];
@@ -321,7 +343,8 @@ function bakedParts(object, buffer, matrix) {
       parts.set(materialIndex, record);
     }
     const { part, mapped } = record;
-    for (let i = start; i < start + count; i++) {
+    const end = Math.min(start + count, buffer.drawRange.start + buffer.drawRange.count);
+    for (let i = Math.max(start, buffer.drawRange.start); i < end; i++) {
       const index = buffer.index.getX(i);
       if (!mapped.has(index)) {
         mapped.set(index, part.vertices.length / 3);
@@ -384,7 +407,8 @@ export function joinMeshes(objects) {
     if (mixed && object.userData.negative) return [];
     object.updateMatrix();
     const matrix = new Matrix4().multiplyMatrices(offset, object.matrix);
-    if (cuts.has(object)) return bakedParts(object, cuts.get(object), matrix);
+    if (cuts.has(object) || object.userData.type === 'letter')
+      return bakedParts(object, cuts.get(object) ?? object.geometry, matrix);
     if (object.userData.type === 'mesh') {
       matrix.multiply(new Matrix4().makeTranslation(...object.userData.offset));
       return object.userData.parts.map((part) => ({
@@ -727,6 +751,10 @@ export function decodeProject(project) {
         (!Array.isArray(data.parts) ||
           data.parts.length < 1 ||
           !data.parts.every(validPart))) ||
+      (data.type === 'letter' &&
+        (!isLetter(data.glyph) || !/^#[0-9a-f]{6}$/i.test(data.color) ||
+          !Number.isFinite(data.letterDepth) || data.letterDepth < 0.01 || data.letterDepth > 5 ||
+          (data.radius ?? 0) > maximumLetterRadius)) ||
       (isPrimitive(data.type) && !validPrimitive(data))
     ) {
       throw new Error('Geçersiz nesne');
@@ -759,7 +787,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, projectVersion].includes(project?.version) ||
     (project.renderSize != null && !validRenderSize(project.renderSize)) ||
     (project.name != null && (typeof project.name !== 'string' || project.name.length > 80 || !project.name.trim())) ||
     !validFrame(project.duration) ||

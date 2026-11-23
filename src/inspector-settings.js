@@ -6,6 +6,7 @@ import { rotationPaths } from './motion.js';
 import { speedMarkup, bindSpeed } from './speed-graph.js';
 import { axes, axisHeading, axisRow } from './inspector-grid.js';
 import { orbitPlanes } from './orbit-motion.js';
+import { maximumLetterRadius } from './text-geometry.js';
 
 const choices = [
   ['Sol', 'Orta', 'Sağ'],
@@ -73,7 +74,7 @@ export function settingsMarkup(object) {
     (object.isMesh || type === 'group' ? '<div class="field">Opaklık (%)<div class="opacity-fields">' +
       '<input id="object-opacity" aria-label="Opaklık (%)" type="number" min="0" max="100">' +
       '<input id="opacity-range" aria-label="Opaklık kaydırıcısı" type="range" min="0" max="100"></div></div>' : '') +
-    (primitive || type === 'mesh'
+    (primitive || type === 'mesh' || type === 'letter'
       ? '<label class="field" title="Düz bir renk veya tekrarlanan bir desen seç.">Yüzey<select id="object-finish">' +
         options([
           ...(type === 'mesh' ? [['parts', 'Parça renkleri']] : []),
@@ -133,6 +134,11 @@ export function settingsMarkup(object) {
           [48, 'Yüksek']
         ]) +
         '</select></label></div>'
+      : '') +
+    (type === 'letter'
+      ? '<div class="inspector-block"><h3>Geometri</h3>' +
+        '<label class="field" title="Harf yüzeyinin yerel Z yönündeki, boyut çarpanı uygulanmadan önceki derinliği.">Kalınlık<input id="letter-depth" type="number" min="0.01" max="5" step="0.01"></label>' +
+        '<label class="field" title="Harf yüzeyiyle yan duvarın birleşimini yuvarlatır. İnce harflerde yumuşatma kalınlığa göre sınırlanır.">Kenar yumuşatma (%)<input id="letter-radius" type="number" min="0" max="' + maximumLetterRadius * 100 + '" step="0.5"></label></div>'
       : '') +
     '<div class="inspector-block"><h3>Animasyon</h3>' +
     '<label class="field" title="Özel bir sahne seçilirse nesne o animasyon seçiliyken görünür.">Nesnenin sahnesi<select id="scene-clip"></select></label>' +
@@ -284,13 +290,13 @@ export function bindSettings(
         changed();
       });
   }
-  function number(id, read, min, max, update) {
+  function number(id, read, min, max, update, description) {
     const input = $(id);
     input.value = read();
     input.onchange = () => {
       const next = input.valueAsNumber;
       if (Number.isFinite(next))
-        edit(() => update(Math.max(min, Math.min(max, next))));
+        edit(() => update(Math.max(min, Math.min(max, next))), description);
       input.value = read();
     };
   }
@@ -348,6 +354,16 @@ export function bindSettings(
   function rebuild(detail = data.detail) {
     setDetail(object, detail);
     return changed(object);
+  }
+  if ($('letter-depth')) {
+    number('letter-depth', () => data.letterDepth, 0.01, 5, value => {
+      data.letterDepth = value;
+      return rebuild();
+    }, 'Harf kalınlığını değiştir');
+    number('letter-radius', () => data.radius * 100, 0, maximumLetterRadius * 100, value => {
+      data.radius = value / 100;
+      return rebuild();
+    }, 'Harf kenarlarını yumuşat');
   }
   if ($('edge-radius-x')) {
     for (const [index, axis] of axes.entries()) {

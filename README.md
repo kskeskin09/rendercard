@@ -39,6 +39,7 @@ Kaydedilmemiş proje değişiklikleri varsa Windows uygulaması çıkarken onay 
 
 ## Şekil ve yerleşim
 
+- **3B Metin** ile sahneye yazı ekleyin ve ekleme penceresinde kalınlık ile kenar yumuşatmayı ayarlayın. Her ekleme ayrı grup oluşturur. Sahne listesindeki **+** ve **−** grubun harflerini açar veya kapatır. Harfi seçip **Geometri** bölümünden kalınlığını ve yumuşatmasını yeniden ayarlayabilirsiniz. Konum, dönüş ve boyut için grubun veya tek harfin karelerini oluşturabilirsiniz.
 - Tek cismi boyutlandırma tutamacı karşı kenarı sabit tutar. Sürüklerken **Shift** iki kenarı eşit miktarda değiştirir. Sayısal **Boyut** alanı seçili merkez noktasını sabit tutar. Çoklu seçimde **Shift** ile sürüklemek cisimleri ortak orta noktaya göre taşır, döndürür veya boyutlandırır. Zincir, sayısal boyutların X, Y ve Z oranını korur.
 - **Yerleşim** bölümünde üç eksenin merkez noktasını ayrı seçin. Merkez seçimi modelin sahnedeki yerini korur ve konum alanları seçilen yeni noktayı gösterir. **Hizala** komutları ilk seçilen nesnenin merkezini referans alır. Bu nesne listede daha koyu işaretlenir. **Sahne** listesi kapalı başlar ve açılana kadar yalnızca seçili nesneleri gösterir.
 - **Zemine bitiştir**, en uç kenarı veya seçili merkez noktasını zemine taşır. **Katılık**, taşıma sırasında yüzeyde durdurur. Açarken bir çakışma varsa nesnelerin adlarını gösterir ve sahneyi yerinde bırakır.
@@ -68,7 +69,7 @@ Yeni **Kamera**, yere paralel olarak sahnenin −Z yönüne bakar. Düzenleyicid
 
 Her nesnenin kareleri kendi satırındadır. Kamera geçişleri ayrı satırda gösterilir. Kareyi sağ tıklayarak taşıyabilir, silebilir veya kopyalayabilirsiniz. Kopyalanan pozu, hedef nesne ve kareyi seçip **Kareyi yapıştır** ile uygulayın. Kamera geçişinin hedefi sağ tık menüsünden değişir.
 
-Zaman çizelgesindeki **Hız** yalnızca düzenleyici oynatmasını etkiler. Bir seferde en fazla 240 karelik aralık görünür. **Zoom** aralığı daraltır. Tüm çizelge görünmediğinde alt kaydırıcı veya çizelge üzerindeki tekerlekle zamanı kaydırın. Dikey şerit kaydırması için şerit adlarının üzerinde tekerleği veya çizelgede Shift ile tekerleği kullanın.
+Zaman çizelgesindeki **Hız** yalnızca düzenleyici oynatmasını etkiler. Bir seferde en fazla 240 karelik aralık görünür. **+** ve **−** kare aralığını yakınlaştırır veya uzaklaştırır. Tüm çizelge görünmediğinde alt kaydırıcı veya çizelge üzerindeki tekerlekle zamanı kaydırın. Dikey şerit kaydırması için şerit adlarının üzerinde tekerleği veya çizelgede Shift ile tekerleği kullanın.
 
 Kamera sıfırlama düğmesine sol tıklamak varsayılan görünümü açar. Sağ tıklayıp kamera seçtiğinizde o açıdan serbestçe dolaşabilirsiniz. Görünüm değiştirirken kayma ve dönme durur. Önceki görünüme döndüğünüzde en son kaldığınız noktadan devam edersiniz. Oynatmayı duraklatınca son kamera açısı korunur. Kamera silinirse ona ait geçiş işaretleri de kalkar. **Kamera takibi** seçilen nesnenin merkezine bakar ve takip başlarken ölçülen uzaklığı ve yönü korur. **Katı cisimlerden etkilen** açıkken kamera engel boyunca hareket edebilir ve yol açılınca takip konumuna geri döner. **Mesafeyi yeniden al** mevcut konumu yeni takip konumu olarak kullanır.
 

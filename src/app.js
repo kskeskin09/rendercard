@@ -13,6 +13,7 @@ import {
   groupObjects,
   joinMeshes,
   makeObject,
+  makeTextGroup,
   materialsOf,
   poseAt,
   projectVersion,
@@ -40,7 +41,7 @@ import { defaultRenderSize, renderAspectLabel, renderSizes, validRenderSize } fr
 import { atmosphereColorMarkup, bindColor } from './color-editor.js';
 import { skyTiles } from './sky-texture.js';
 import { orbitPosition, orderedOrbits } from './orbit-motion.js';
-import { timelineWindow } from './timeline-window.js';
+import { stepTimelineZoom, timelineWindow } from './timeline-window.js';
 import {
   axes,
   axisHeading,
@@ -54,6 +55,7 @@ const root = new Group();
 const modes = ['select', 'translate', 'rotate', 'scale'];
 const fps = 30;
 const selected = new Set();
+const collapsedGroups = new Set();
 let duration = 120;
 let frame = 0;
 let playing = false;
@@ -625,7 +627,8 @@ function paintTimelineWindow() {
   $('timeline-scroll').max = duration - span;
   $('timeline-scroll').value = start;
   $('timeline-scroll').hidden = span === duration;
-  $('timeline-zoom').disabled = Math.min(240, duration) <= 6;
+  $('timeline-zoom-out').disabled = span === timelineWindow(duration, 0, 0).span;
+  $('timeline-zoom-in').disabled = span === timelineWindow(duration, 100, 0).span;
   $('timeline-range').textContent = start + '–' + end;
   const tickCount = Math.min(span, 8);
   $('ticks').replaceChildren(
@@ -659,14 +662,16 @@ $('timeline-speed').onchange = event => {
   if (playing && previewStart === undefined)
     startedAt = performance.now() - frame * 1000 / (fps * editPlaybackRate);
 };
-$('timeline-zoom').oninput = event => {
+function changeTimelineZoom(direction) {
   const old = timelineWindow(duration, timelineZoom, timelineStart);
-  timelineZoom = event.currentTarget.valueAsNumber;
+  timelineZoom = stepTimelineZoom(duration, timelineZoom, direction);
   const { span } = timelineWindow(duration, timelineZoom, timelineStart);
   const anchor = frame >= old.start && frame <= old.end ? frame : (old.start + old.end) / 2;
   timelineStart = anchor - (anchor - old.start) / old.span * span;
   paintTimelineWindow();
-};
+}
+$('timeline-zoom-out').onclick = () => changeTimelineZoom(-1);
+$('timeline-zoom-in').onclick = () => changeTimelineZoom(1);
 $('timeline-scroll').oninput = event => {
   timelineStart = event.currentTarget.valueAsNumber;
   paintTimelineWindow();
@@ -1225,11 +1230,13 @@ function paintList() {
   let triangles = 0;
   let objectCount = 0;
   const alignmentAnchor = independentSelection()[0];
-  function rowFor(object, depth) {
+  function rowFor(object, depth, hiddenByGroup = false) {
     objectCount++;
     if (object.isMesh) triangles += object.geometry.index.count / 3;
-    if (!sceneExpanded && !selected.has(object)) {
-      object.children.forEach(child => rowFor(child, depth + 1));
+    const collapsed = collapsedGroups.has(object.userData.objectId);
+    const childrenHidden = hiddenByGroup || collapsed;
+    if (sceneExpanded ? hiddenByGroup : !selected.has(object)) {
+      object.children.forEach(child => rowFor(child, depth + 1, childrenHidden));
       return;
     }
     const type = object.userData.type;
@@ -1271,8 +1278,25 @@ function paintList() {
     }, 'Önizleme görünürlüğünü değiştir');
     visibility.oncontextmenu = (event) => presets.openContext(event, object);
     entry.append(visibility, row);
+    if (object.children.length && sceneExpanded) {
+      const toggle = document.createElement('button');
+      toggle.className = 'object-group-toggle quiet';
+      toggle.textContent = collapsed ? '+' : '−';
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+      toggle.title = object.name + (collapsed ? ' · Grubu genişlet' : ' · Grubu daralt');
+      toggle.setAttribute('aria-label', toggle.title);
+      toggle.onclick = () => {
+        if (collapsed) collapsedGroups.delete(object.userData.objectId);
+        else collapsedGroups.add(object.userData.objectId);
+        paintList();
+        $('object-list').children[entryIndex]?.querySelector('.object-group-toggle')?.focus();
+      };
+      entry.classList.add('has-group-toggle');
+      entry.append(toggle);
+    }
+    const entryIndex = rows.length;
     rows.push(entry);
-    object.children.forEach((child) => rowFor(child, depth + 1));
+    object.children.forEach(child => rowFor(child, depth + 1, childrenHidden));
   }
   root.children.forEach((object) => rowFor(object, 0));
   $('object-list').replaceChildren(...rows);
@@ -1733,30 +1757,30 @@ presets = installPresets({
   status
 });
 
+function addToActiveScene(object) {
+  root.add(object);
+  if (animations.active === 'main') return;
+  object.userData.sceneClip = animations.active;
+  if (!animations.enabled.includes(animations.active)) {
+    animations.enabled = animations.clips
+      .map(clip => clip.id)
+      .filter(id => id === animations.active || animations.enabled.includes(id));
+  }
+}
+
 function addObject(type) {
-  setPlaying(false);
   let index = 1;
   const names = new Set();
   forObjects((object) => names.add(object.name));
   while (names.has(types[type] + ' ' + index)) index++;
   const object = makeObject(type, types[type] + ' ' + index);
-  if (animations.active !== 'main') {
-    object.userData.sceneClip = animations.active;
-    if (!animations.enabled.includes(animations.active)) {
-      animations.enabled = animations.clips
-        .map((clip) => clip.id)
-        .filter(
-          (id) => id === animations.active || animations.enabled.includes(id)
-        );
-    }
-  }
   object.position.set(
     Math.min((index - 1) * 0.35, 2.1),
     type === 'light' ? 3 : type === 'camera' ? 1.5 : 0.5,
     type === 'camera' ? 5 : 1.7
   );
   if (object.isMesh) object.material.wireframe = wireframe;
-  root.add(object);
+  addToActiveScene(object);
   updateSceneVisibility();
   collisions?.separate(root, object);
   if (settleObject(object) === false) return false;
@@ -1764,6 +1788,41 @@ function addObject(type) {
   setMode('translate');
   status(object.name + ' eklendi.');
 }
+
+const textDialog = $('text-dialog');
+$('add-text').onclick = () => {
+  if (recording) return;
+  setPlaying(false);
+  $('text-form').reset();
+  $('text-error').hidden = true;
+  textDialog.showModal();
+};
+$('close-text-dialog').onclick = () => textDialog.close();
+$('text-form').onsubmit = event => {
+  event.preventDefault();
+  let group;
+  try {
+    group = makeTextGroup($('text-content').value, $('text-depth').valueAsNumber, $('text-radius').valueAsNumber / 100);
+  } catch (error) {
+    $('text-error').textContent = error.message;
+    $('text-error').hidden = false;
+    return;
+  }
+  textDialog.close();
+  edit(() => {
+    group.position.set(0, 0, 1.7);
+    addToActiveScene(group);
+    groundObject(group);
+    updateSceneVisibility();
+    collisions?.separate(root, group);
+    if (settleObject(group) === false) return false;
+    setWireframe(wireframe);
+    sceneExpanded = true;
+    select(group);
+    setMode('translate');
+    status(group.name + ' metni eklendi.');
+  }, '3B metin ekle');
+};
 
 function deleteSelection() {
   if (!selected.size) return;
@@ -2127,7 +2186,7 @@ window.addEventListener('keydown', (event) => {
     }
     return;
   }
-  if ($('render-settings-dialog').open || $('model-dialog').open || joinDialog.open) return;
+  if ($('render-settings-dialog').open || $('model-dialog').open || joinDialog.open || textDialog.open) return;
   if ($('render-preview').open) {
     if (key === ' ' && document.activeElement?.tagName !== 'BUTTON') {
       event.preventDefault();

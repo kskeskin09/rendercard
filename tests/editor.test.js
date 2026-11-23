@@ -15,6 +15,7 @@ import {
   groupObjects,
   joinMeshes,
   makeObject,
+  makeTextGroup,
   poseAt,
   setDetail,
   writeKey,
@@ -844,10 +845,54 @@ test('orbital distance, angle profile and repeat period are independent', async 
 });
 
 test('the timeline keeps 240 frames or fewer visible and bounds panning', async () => {
-  const { timelineWindow } = await import('../src/timeline-window.js');
+  const { stepTimelineZoom, timelineWindow } = await import('../src/timeline-window.js');
   assert.deepEqual(timelineWindow(120, 0, 32), { start: 0, end: 120, span: 120 });
   assert.deepEqual(timelineWindow(480, 0, 900), { start: 240, end: 480, span: 240 });
   assert.deepEqual(timelineWindow(120, 100, 30), { start: 30, end: 36, span: 6 });
+  assert.equal(stepTimelineZoom(120, 0, 1), 20);
+  assert.equal(stepTimelineZoom(120, 100, -1), 80);
+  const zoomed = stepTimelineZoom(7, 0, 1);
+  assert.equal(timelineWindow(7, zoomed, 0).span, 6);
+  assert.equal(timelineWindow(7, stepTimelineZoom(7, zoomed, -1), 0).span, 7);
+});
+
+test('extruded Turkish text keeps editable letters, geometry and independent keyframes', () => {
+  const root = new Group();
+  const word = makeTextGroup('Işık\nÇığ', 0.2, 0.015);
+  root.add(word);
+  groundObject(word);
+  close(bounds(word).min.y, 0);
+  assert.deepEqual(word.children.map(letter => letter.name), [...'IşıkÇığ']);
+  assert(word.children[0].position.y > word.children[4].position.y);
+  const [letter, second] = word.children;
+  assert.notEqual(letter.userData.objectId, second.userData.objectId);
+  assert(letter.geometry.index.count > 0);
+  close(bounds(letter).getSize(new Vector3()).z, 0.2);
+  letter.userData.letterDepth = 0.45;
+  setDetail(letter, letter.userData.detail);
+  close(bounds(letter).getSize(new Vector3()).z, 0.45);
+  const startX = word.position.x;
+  writeKey(word, 0);
+  writeKey(letter, 0);
+  word.position.x += 2;
+  letter.rotation.z = Math.PI / 2;
+  letter.scale.setScalar(2);
+  writeKey(word, 40);
+  writeKey(letter, 40);
+  const [saved] = decodeProject(encodeProject(root, 120)).objects;
+  const [savedLetter, savedSecond] = saved.children;
+  poseAt(saved, 20);
+  poseAt(savedLetter, 20);
+  close(saved.position.x, startX + 1);
+  close(savedLetter.rotation.z, Math.PI / 4);
+  close(savedLetter.scale.x, 1.5);
+  close(savedSecond.scale.x, 1);
+  assert.equal(savedLetter.userData.letterDepth, 0.45);
+  const merged = joinMeshes([savedLetter, savedSecond]);
+  assert.equal(merged.userData.parts.length, 2);
+  root.clear();
+  root.add(saved);
+  assert.equal(decodeProject(encodeProject(root, 120)).objects[0].children.length, 6);
 });
 
 test('size and position curves are independent and old projects keep their shared timing', () => {

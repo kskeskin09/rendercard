@@ -112,6 +112,9 @@
           <button id="add-camera" class="shape">
             <span class="shape-art camera-art" data-icon="camera"></span>Kamera
           </button>
+          <button id="add-text" class="shape">
+            <span class="shape-art box-art" data-icon="letter"></span>3B Metin
+          </button>
         </div>
         <section id="preset-editor" class="preset-editor" hidden>
           <h3>Preset sahnesi</h3>
@@ -463,7 +466,10 @@
             <label>Hız<select id="timeline-speed" aria-label="Oynatma hızı">
               <option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option>
             </select></label>
-            <label>Zoom<input id="timeline-zoom" type="range" min="0" max="100" value="0" aria-label="Zaman çizelgesini yakınlaştır"></label>
+            <div class="timeline-zoom-controls" role="group" aria-label="Zaman çizelgesi yakınlaştırması">
+              <button id="timeline-zoom-out" type="button" class="quiet" title="Zaman çizelgesini uzaklaştır" aria-label="Zaman çizelgesini uzaklaştır">−</button>
+              <button id="timeline-zoom-in" type="button" class="quiet" title="Zaman çizelgesini yakınlaştır" aria-label="Zaman çizelgesini yakınlaştır">+</button>
+            </div>
             <input id="timeline-scroll" type="range" min="0" max="0" value="0" aria-label="Zaman çizelgesini kaydır" hidden>
             <output id="timeline-range" aria-label="Görüntülenen kare aralığı"></output>
           </div>
@@ -502,6 +508,22 @@
       <button id="context-delete">Sil</button>
     </div>
     <div id="view-camera-menu" class="menu object-menu" hidden></div>
+    <dialog id="text-dialog" class="export-dialog" aria-labelledby="text-title">
+      <form id="text-form">
+        <h3 id="text-title">3B Metin Ekle</h3>
+        <label class="field">Metin<textarea id="text-content" rows="3" maxlength="120" required autofocus></textarea></label>
+        <div class="text-geometry-fields">
+          <label class="field">Kalınlık<input id="text-depth" type="number" min="0.01" max="5" step="0.01" value="0.2" required></label>
+          <label class="field" title="Harf yüzeyiyle yan duvarın birleşimini yuvarlatır.">Kenar yumuşatma (%)<input id="text-radius" type="number" min="0" max="4" step="0.5" value="0" required></label>
+        </div>
+        <p class="selection-tip">Her harf ayrı bir nesne olarak aynı gruba eklenir.</p>
+        <p id="text-error" class="text-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="close-text-dialog" type="button">Vazgeç</button>
+          <button class="primary" type="submit">Metni ekle</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="join-dialog" class="export-dialog" aria-labelledby="join-title" aria-describedby="join-message">
       <form id="join-form">
         <h2 id="join-title">Animasyonlu cisimleri birleştir</h2>
