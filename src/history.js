@@ -2,7 +2,11 @@ export function createHistory() {
   const undo = [];
   const redo = [];
   let label;
+  let revision = Symbol();
   return {
+    get revision() {
+      return revision;
+    },
     get canUndo() {
       return undo.length > 0;
     },
@@ -14,7 +18,9 @@ export function createHistory() {
     },
     remember(before, after, description = 'Sahneyi düzenle') {
       if (before.project === after.project) return;
-      undo.push({ before, after, description });
+      const next = Symbol();
+      undo.push({ before, after, description, previousRevision: revision, nextRevision: next });
+      revision = next;
       if (undo.length > 60) undo.shift();
       redo.length = 0;
     },
@@ -25,6 +31,7 @@ export function createHistory() {
       if (!entry) return undefined;
       to.push(entry);
       label = entry.description;
+      revision = direction < 0 ? entry.previousRevision : entry.nextRevision;
       return direction < 0 ? entry.before : entry.after;
     }
   };

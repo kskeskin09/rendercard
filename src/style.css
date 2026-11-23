@@ -1450,3 +1450,20 @@ textarea,
   .topbar .project { display: flex; flex-basis: 100%; order: 1; }
   #scene-name { width: min(70vw, 16rem); }
 }
+
+.viewport canvas.measuring { cursor: crosshair; }
+.measurement-label {
+  position: absolute;
+  z-index: 4;
+  padding: 4px 8px;
+  border: 1px solid #eadc88;
+  border-radius: 6px;
+  background: #252819ec;
+  color: #fff4ae;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  line-height: 1.3;
+  transform: translate(-50%, -125%);
+  pointer-events: none;
+}

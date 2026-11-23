@@ -693,3 +693,55 @@ test('disjoint meshes join without moving their geometry and keep their shared m
   close(restored.position.x, 2);
   close(before.max.distanceTo(bounds(restored).max), 0);
 });
+
+test('measurement points use grid precision and snap to visible shape edges', async () => {
+  const { measurementPoint } = await import('../src/measurement.js');
+  const { OrthographicCamera, Raycaster, Vector2 } = await import('three');
+  const root = new Group();
+  const camera = new OrthographicCamera(-4, 4, 4, -4, .01, 100);
+  camera.position.y = 8;
+  camera.up.set(0, 0, -1);
+  camera.lookAt(0, 0, 0);
+  const target = new Vector3();
+  const viewport = { width: 1000, height: 1000 };
+  const pick = (x, y, snap, anchor) => measurementPoint(
+    root, camera, new Vector2(x, y), viewport, target, anchor, snap, new Raycaster(), new Raycaster()
+  );
+  assert.deepEqual(pick(.585, .225, { step: .5 }).toArray(), [2.5, 0, -1]);
+
+  const box = makeObject('box');
+  box.scale.set(4, 1, 4);
+  box.position.y = .5;
+  root.add(box);
+  close(pick(.485, 0, {}).x, 1.94);
+  const edge = pick(.485, 0, { surface: true });
+  close(edge.x, 2);
+  close(edge.y, 1);
+  box.visible = false;
+  close(pick(.485, 0, { surface: true }).y, 0);
+
+  camera.position.set(8, 0, 0);
+  camera.up.set(0, 1, 0);
+  camera.lookAt(target);
+  const point = pick(0, .25, {}, new Vector3(2, 0, 0));
+  close(point.x, 2);
+  close(point.y, 1);
+});
+
+test('history revisions recognize returning to the saved state and diverging again', () => {
+  const history = createHistory();
+  const initial = history.revision;
+  history.remember({ project: 'A' }, { project: 'B' });
+  const saved = history.revision;
+  history.remember({ project: 'B' }, { project: 'C' });
+  assert.notEqual(history.revision, saved);
+  history.step(-1);
+  assert.equal(history.revision, saved);
+  history.step(-1);
+  assert.equal(history.revision, initial);
+  history.step(1);
+  assert.equal(history.revision, saved);
+  history.remember({ project: 'B' }, { project: 'D' });
+  assert.notEqual(history.revision, saved);
+  assert.equal(history.canRedo, false);
+});

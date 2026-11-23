@@ -13,6 +13,7 @@ const { pathToFileURL } = require('node:url');
 
 const scheme = 'rendercard';
 const appUrl = 'rendercard://editor/';
+const dirtyWindows = new WeakSet();
 const saveFormats = new Map([
   [
     'sahne.rendercard.json',
@@ -76,6 +77,13 @@ function serveEditor() {
 }
 
 function registerSave() {
+  ipcMain.on('rendercard:document-dirty', (event, dirty) => {
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    const sender = event.senderFrame;
+    if (!owner || !sender || sender.parent || sender.url !== appUrl || typeof dirty !== 'boolean') return;
+    if (dirty) dirtyWindows.add(owner);
+    else dirtyWindows.delete(owner);
+  });
   ipcMain.handle('rendercard:save-file', async (event, name, bytes) => {
     const owner = BrowserWindow.fromWebContents(event.sender);
     const sender = event.senderFrame;
@@ -123,6 +131,31 @@ function openWindow() {
   window.removeMenu();
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event) => event.preventDefault());
+  let confirming = false;
+  let allowClose = false;
+  window.on('close', event => {
+    if (allowClose || !dirtyWindows.has(window)) return;
+    event.preventDefault();
+    if (confirming) return;
+    confirming = true;
+    void dialog.showMessageBox(window, {
+      type: 'warning',
+      title: 'Kaydedilmemiş değişiklikler',
+      message: 'Kaydedilmemiş değişiklikler var. Yine de çıkmak istiyor musunuz?',
+      buttons: ['Vazgeç', 'Çık'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    }).then(({ response }) => {
+      if (response !== 1 || window.isDestroyed()) return;
+      allowClose = true;
+      window.close();
+    }).catch(error => {
+      console.error('Çıkış uyarısı açılamadı.', error);
+    }).finally(() => {
+      confirming = false;
+    });
+  });
   void window.loadURL(appUrl);
   return window;
 }

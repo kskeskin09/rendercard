@@ -31,6 +31,12 @@ Animasyon 30 FPS olarak WebM veya MP4 biçiminde yazılır. Tarayıcı sürümü
 
 Örnek sahnedeki **Kutu** hazır bir animasyona sahiptir. `Q` seçim, `G` taşıma, `R` döndürme, `S` ölçekleme, `K` kare ekleme ve `Boşluk` oynatma içindir. `Ctrl+Z` sahne düzenlemelerini geri alır, `Ctrl+Y` yineler. `Ctrl+D` seçimi çoğaltır, `F` seçime odaklanır. Her iki komut da 3B görünüm ve nesne listesindeki sağ tık menüsünde bulunur.
 
+`X` sağ, `Y` üst, `Z` ön görünümü açar. Bu görünümlerde perspektif kısalması yoktur. Aynı tuşa tekrar basmak serbest görünüme döner. Eksen görünümü, render kamerasını değiştirmez.
+
+**Mesafe ölç** düğmesini veya `M` tuşunu kullanın. İlk noktadan sonra çizgi ve mesafe imleci takip eder. İkinci tık ölçümü sabitler, üçüncü tık yeni ölçüm başlatır. **Tam konumlar** noktaları belirlediğiniz aralığa, **Yüzeye yakala** ise yakın kenar ve köşelere oturtur. `Esc` ölçümü kapatır.
+
+Kaydedilmemiş proje değişiklikleri varsa Windows uygulaması çıkarken onay ister. PNG ve video dışa aktarımı proje kaydı sayılmaz.
+
 ## Şekil ve yerleşim
 
 - Tek cismi boyutlandırma tutamacı karşı kenarı sabit tutar. Sürüklerken **Shift** iki kenarı eşit miktarda değiştirir. Sayısal **Boyut** alanı seçili merkez noktasını sabit tutar. Çoklu seçimde **Shift** ile sürüklemek cisimleri ortak orta noktaya göre taşır, döndürür veya boyutlandırır. Zincir, sayısal boyutların X, Y ve Z oranını korur.

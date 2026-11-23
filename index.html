@@ -204,7 +204,7 @@
                 class="quiet"
                 aria-expanded="false"
                 aria-label="Yakalama"
-                title="Taşıma sırasında konum ve yüzey yakalama seçenekleri"
+                title="Taşıma ve ölçüm için yakalama seçenekleri"
               >
                 <span data-icon="snap"></span><span>Yakalama</span>
               </button>
@@ -293,9 +293,16 @@
               data-icon="scale"
               aria-label="Boyutlandır"
               title="Boyutlandır (S)"
+            ></button
+            ><button
+              id="measure"
+              data-icon="ruler"
+              aria-label="Mesafe ölç"
+              aria-pressed="false"
+              title="Mesafe ölç (M)"
             ></button>
           </div>
-          <div class="axis-widget" aria-hidden="true">
+          <div class="axis-widget" aria-hidden="true" title="X Sağ · Y Üst · Z Ön">
             <span class="axis-y">Y</span><span class="axis-x">X</span
             ><span class="axis-z">Z</span>
           </div>
@@ -304,6 +311,7 @@
             sürükle <b>Kaydır</b>
           </div>
           <div id="engine-error" class="engine-error" hidden></div>
+          <output id="measurement-label" class="measurement-label" aria-label="Ölçülen mesafe" hidden></output>
           <div id="sample-preview" class="sample-preview" hidden>
             <span></span><b></b>
           </div>

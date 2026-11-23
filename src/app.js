@@ -60,6 +60,9 @@ let startedAt = 0;
 let view;
 let collisions;
 let history = createHistory();
+let savedRevision = history.revision;
+let documentDirty = false;
+let savingProject = false;
 let drag;
 let presetScene;
 let presets;
@@ -78,6 +81,7 @@ const inspectorPositions = new WeakMap();
 let paintedInspector;
 let previewCamera = false;
 let cameraOverride;
+let measuring = false;
 let freeViewLabel;
 let sceneName = 'Yeni sahne';
 let sceneExpanded = false;
@@ -160,6 +164,21 @@ function replaceScene(state) {
 function updateHistory() {
   $('undo').disabled = !history.canUndo;
   $('redo').disabled = !history.canRedo;
+  const dirty = presetScene
+    ? presetScene.history.revision !== savedRevision || history.revision !== presetScene.initialRevision
+    : history.revision !== savedRevision;
+  if (dirty !== documentDirty) {
+    documentDirty = dirty;
+    window.rendercardDesktop?.setDocumentDirty(dirty);
+  }
+}
+
+if (!window.rendercardDesktop) {
+  window.addEventListener('beforeunload', event => {
+    if (!documentDirty) return;
+    event.preventDefault();
+    event.returnValue = true;
+  });
 }
 
 function resetPhysics() {
@@ -457,6 +476,7 @@ function refreshFrame() {
 
 function setPlaying(value) {
   if (value && animations.enabled.length === 0) return;
+  if (value && measuring) setMeasure(false);
   if (playing && !value && previewStart === undefined) {
     const camera = getCamera(cameraAt(animations, frame));
     if (camera) jumpToCamera(camera);
@@ -730,7 +750,7 @@ function updateCameraView() {
   const camera = useOverride ? getCamera(cameraOverride) : outputCamera;
   view?.setShot(camera, preview, outputCamera);
   $('viewport-camera-name').textContent =
-    preview ? (camera?.name ?? 'Varsayılan') : (freeViewLabel?.name ?? 'Varsayılan');
+    preview ? (camera?.name ?? 'Varsayılan') : (view?.axisLabel ?? freeViewLabel?.name ?? 'Varsayılan');
 }
 
 function jumpToCamera(camera) {
@@ -788,11 +808,11 @@ function paintClips() {
         const checked = new Set(animations.enabled);
         if (checkbox.checked) checked.add(clip.id);
         else checked.delete(clip.id);
-        useClips(
+        edit(() => useClips(
           animations.clips
             .filter((item) => checked.has(item.id))
             .map((item) => item.id)
-        );
+        ), 'Etkin animasyonları değiştir');
       };
       label.append(checkbox, clip.name);
       const row = document.createElement('div');
@@ -857,7 +877,7 @@ function updateSceneVisibility() {
   });
 }
 
-$('clip-active').onchange = (event) => {
+$('clip-active').onchange = (event) => edit(() => {
   const wasSolo =
     animations.enabled.length === 1 &&
     animations.enabled[0] === animations.active;
@@ -867,7 +887,7 @@ $('clip-active').onchange = (event) => {
     updateTimeline();
     paintInspector();
   }
-};
+}, 'Düzenlenen animasyonu değiştir');
 $('clip-name').onchange = (event) =>
   edit(() => {
     const clip = animations.clips.find((item) => item.id === animations.active);
@@ -886,7 +906,7 @@ $('clip-add').onclick = () =>
     useClips([clip.id]);
   });
 $('clip-select-all').onclick = () =>
-  useClips(animations.clips.map((clip) => clip.id));
+  edit(() => useClips(animations.clips.map((clip) => clip.id)), 'Etkin animasyonları değiştir');
 function playClips() {
   if (!animations.enabled.length) return;
   $('clip-name').closest('details').open = false;
@@ -896,7 +916,7 @@ function playClips() {
 }
 $('clip-play-selected').onclick = playClips;
 $('clip-play-all').onclick = () => {
-  useClips(animations.clips.map((clip) => clip.id));
+  edit(() => useClips(animations.clips.map((clip) => clip.id)), 'Etkin animasyonları değiştir');
   playClips();
 };
 $('clip-play-sequence').onclick = () => {
@@ -964,6 +984,7 @@ document.addEventListener('rendercard-color-mode', (event) => {
 
 function pickSceneColor(callback, button) {
   setPlaying(false);
+  if (measuring) setMeasure(false);
   if (activePicker && activePicker !== button) view?.pickColor(undefined);
   activePicker = button;
   const active = view?.toggleColor(callback);
@@ -974,6 +995,20 @@ function pickSceneColor(callback, button) {
   );
   return active;
 }
+
+function setMeasure(active) {
+  if (!view) return;
+  if (active) {
+    setPlaying(false);
+    if (previewCamera) jumpToCamera(getCamera(cameraOverride ?? cameraAt(animations, frame)));
+  }
+  measuring = active;
+  view.setMeasuring(active);
+  $('measure').setAttribute('aria-pressed', String(active));
+  updateCameraView();
+  status(active ? 'Ölçmek için ilk noktayı seç. Esc ölçümü kapatır.' : 'Mesafe ölçümü kapatıldı.');
+}
+$('measure').onclick = () => setMeasure(!measuring);
 
 const fogPalette = $('fog-palette');
 fogPalette.innerHTML = fogColorMarkup();
@@ -1396,6 +1431,7 @@ presets = installPresets({
       camera: view?.captureCamera()
     };
     history = createHistory();
+    presetScene.initialRevision = history.revision;
     mode = 'select';
     replaceScene({
       project: JSON.stringify({
@@ -1806,6 +1842,7 @@ $('show-pivots').onclick = () => {
 for (const button of all('[data-mode]')) {
   button.onclick = () => {
     setPlaying(false);
+    if (measuring) setMeasure(false);
     setMode(button.dataset.mode);
   };
 }
@@ -1854,7 +1891,9 @@ window.addEventListener('keydown', (event) => {
     }
     return;
   }
-  const textField = /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName);
+  const focused = document.activeElement;
+  const textField = /SELECT|TEXTAREA/.test(focused?.tagName) ||
+    (focused?.tagName === 'INPUT' && !['radio', 'checkbox', 'range'].includes(focused.type));
   if (!recording && !textField && !$('preset-dialog').open && event.ctrlKey && !event.altKey && key === 'd') {
     event.preventDefault();
     duplicateObjects();
@@ -1876,15 +1915,36 @@ window.addEventListener('keydown', (event) => {
     event.ctrlKey ||
     event.altKey ||
     event.metaKey ||
-    textField
+    textField ||
+    $('preset-dialog').open
   )
     return;
+  if (key === 'escape' && measuring) {
+    setMeasure(false);
+    return;
+  }
+  if (['x', 'y', 'z'].includes(key)) {
+    if (event.repeat) return;
+    event.preventDefault();
+    setPlaying(false);
+    previewCamera = false;
+    cameraOverride = undefined;
+    $('preview-camera').setAttribute('aria-pressed', 'false');
+    view?.toggleAxis(key);
+    updateCameraView();
+    return;
+  }
+  if (key === 'm') {
+    if (!event.repeat) setMeasure(!measuring);
+    return;
+  }
   const modeKey =
     'qgrs'.indexOf(key) !== -1 && key.length === 1
       ? modes['qgrs'.indexOf(key)]
       : undefined;
   if (modeKey) {
     setPlaying(false);
+    if (measuring) setMeasure(false);
     setMode(modeKey);
   }
   if (key === 'delete') edit(deleteSelection);
@@ -1904,11 +1964,12 @@ async function saveOutput(blob, name, label) {
         await blob.arrayBuffer()
       );
       status(saved ? label + ' kaydedildi.' : 'Kaydetme iptal edildi.');
+      return saved;
     } catch (error) {
       console.error('Dosya kaydedilemedi.', error);
       status('Dosya kaydedilemedi.');
+      return false;
     }
-    return;
   }
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
@@ -1917,15 +1978,18 @@ async function saveOutput(blob, name, label) {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 15_000);
   status(label + ' indirildi.');
+  return true;
 }
 
-$('save').onclick = () => {
+$('save').onclick = async () => {
+  if (savingProject) return;
+  const revision = history.revision;
   const viewPose = view?.captureCamera();
   const content = JSON.stringify(
     encodeProject(
       root,
       duration,
-      animations,
+      sequence ? { ...animations, enabled: sequence.ids } : animations,
       atmosphere,
       viewPose && {
         position: viewPose.position.toArray(),
@@ -1936,11 +2000,15 @@ $('save').onclick = () => {
     null,
     2
   );
-  void saveOutput(
-    new Blob([content], { type: 'application/json' }),
-    'sahne.rendercard.json',
-    'Proje'
-  );
+  savingProject = true;
+  try {
+    if (await saveOutput(new Blob([content], { type: 'application/json' }), 'sahne.rendercard.json', 'Proje')) {
+      savedRevision = revision;
+      updateHistory();
+    }
+  } finally {
+    savingProject = false;
+  }
 };
 $('open').onclick = () => $('project-file').click();
 $('project-file').onchange = async (event) => {
@@ -1950,6 +2018,7 @@ $('project-file').onchange = async (event) => {
   try {
     const project = decodeProject(JSON.parse(await file.text()));
     edit(() => {
+      if (measuring) setMeasure(false);
       [...root.children].forEach(disposeObject);
       project.objects.forEach((object) => root.add(object));
       duration = project.duration;
@@ -1966,6 +2035,8 @@ $('project-file').onchange = async (event) => {
       frameTo(0);
       refresh();
     });
+    savedRevision = history.revision;
+    updateHistory();
     status('Proje açıldı.');
   } catch {
     status('Proje açılamadı. Geçerli bir Rendercard JSON dosyası seç.');
@@ -2143,6 +2214,10 @@ populate();
 try {
   view = createViewport($('viewport'), root, {
     select,
+    measurementSettings: () => ({ step: dimensionStep(), surface: $('snap-surface').checked }),
+    measured: result => status(result
+      ? 'Mesafe ' + result + ' · Yeni ölçüm için bir noktaya tıkla.'
+      : 'İkinci noktayı seç. Mesafe imleci takip eder.'),
     context: (event, object) => presets.openContext(event, object),
     editing: (direction, axis, pivot) => {
       const object = single();

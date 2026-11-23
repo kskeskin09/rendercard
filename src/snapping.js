@@ -3,10 +3,13 @@ import { translateWorld } from './spatial.js';
 
 export function snapToGrid(object, axes, step) {
   const point = object.getWorldPosition(new Vector3());
-  const delta = new Vector3();
-  for (const axis of axes)
-    delta[axis] = Math.round(point[axis] / step) * step - point[axis];
-  translateWorld(object, delta);
+  translateWorld(object, snapPointToGrid(point, step, axes).sub(point));
+}
+
+export function snapPointToGrid(point, step, axes = ['x', 'y', 'z']) {
+  const result = point.clone();
+  for (const axis of axes) result[axis] = Math.round(point[axis] / step) * step;
+  return result;
 }
 
 export function surfaceOffset(moving, targets, active, threshold) {

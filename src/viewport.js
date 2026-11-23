@@ -9,11 +9,13 @@ import { localBounds } from './spatial.js';
 import { updateOpacity } from './opacity.js';
 import { withSceneCuts } from './boolean-cuts.js';
 import { updateTileBounds } from './tiles.js';
+import { axisLabels, changeAxisView, resizeAxisView } from './axis-view.js';
+import { createMeasurement } from './measurement.js';
 
 export function createViewport(
   element,
   root,
-  { select, context, editing, change, moved }
+  { select, context, editing, change, moved, measurementSettings, measured }
 ) {
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
@@ -25,6 +27,7 @@ export function createViewport(
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.15;
   renderer.domElement.setAttribute('aria-label', '3B sahne');
+  renderer.domElement.tabIndex = 0;
   element.prepend(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -36,7 +39,10 @@ export function createViewport(
   let outputShot;
   let previewShot = false;
   let savedDefault;
+  let axisView;
   const orbit = new OrbitControls(camera, renderer.domElement);
+  const measurement = createMeasurement(root, scene, renderer.domElement, element.querySelector('#measurement-label'), measurementSettings);
+  orbit.addEventListener('change', measurement.invalidate);
   orbit.enableDamping = true;
   orbit.minDistance = 1;
   orbit.maxDistance = 70;
@@ -191,9 +197,22 @@ export function createViewport(
   transform.setSize(0.78);
   const transformHelper = transform.getHelper();
   scene.add(transformHelper);
-  transform.addEventListener('dragging-changed', (event) => {
-    orbit.enabled = !event.value;
-  });
+  transform.addEventListener('dragging-changed', updateControls);
+  function updateControls() {
+    const staged = previewShot && (shotObject || axisView);
+    orbit.enabled = !axisView && !staged && !transform.dragging;
+    if (axisView) axisView.controls.enabled = !staged && !transform.dragging;
+    transform.enabled = !staged && !measurement.active;
+    transform.camera = axisView?.camera ?? camera;
+  }
+
+  function closeAxisView() {
+    if (!axisView) return;
+    axisView.controls.dispose();
+    axisView = undefined;
+    measurement.invalidate();
+    updateControls();
+  }
   transform.addEventListener('objectChange', () => change(symmetricScale, transform.object === selectionPivot ? selectionPivot : undefined));
   transform.addEventListener('mouseDown', () => {
     const direction =
@@ -368,6 +387,7 @@ export function createViewport(
     );
   }
   renderer.domElement.addEventListener('pointermove', (event) => {
+    if (measurement.active) measurement.move(event.clientX, event.clientY);
     if (!sampler) return;
     previewPosition = [event.clientX, event.clientY];
     if (previewRequest != null) return;
@@ -392,6 +412,7 @@ export function createViewport(
     });
   });
   renderer.domElement.addEventListener('pointerleave', () => {
+    if (measurement.active) measurement.move();
     previewPosition = undefined;
     samplePreview.hidden = true;
   });
@@ -399,7 +420,18 @@ export function createViewport(
   renderer.domElement.addEventListener(
     'pointerdown',
     (event) => {
-      if (!sampler) return;
+      if (!sampler) {
+        if (!measurement.active || event.button !== 0 || event.altKey) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        renderer.domElement.focus({ preventScroll: true });
+        down = undefined;
+        const result = withSceneCuts(root, () => measurement.place(
+          event.clientX, event.clientY, activeCamera(previewShot), (axisView?.controls ?? orbit).target
+        ));
+        if (result !== undefined) measured(result);
+        return;
+      }
       event.preventDefault();
       event.stopImmediatePropagation();
       down = undefined;
@@ -411,6 +443,7 @@ export function createViewport(
     { capture: true }
   );
   renderer.domElement.addEventListener('pointerdown', (event) => {
+    if (measurement.active && event.button === 0) return;
     if (
       event.isPrimary &&
       (event.button === 2 || (event.button === 0 && !transform.axis))
@@ -480,6 +513,8 @@ export function createViewport(
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    resizeAxisView(axisView, camera.aspect);
+    measurement.invalidate();
   }
   new ResizeObserver(resize).observe(element);
   resize();
@@ -495,7 +530,8 @@ export function createViewport(
 
   function activeCamera(useShot, output = false) {
     const source = output ? outputShot : shotObject;
-    if (!useShot || (!source && !savedDefault)) return camera;
+    if (!useShot) return axisView?.camera ?? camera;
+    if (!source && !savedDefault) return camera;
     if (!source) {
       shot.position.copy(savedDefault.position);
       shot.lookAt(savedDefault.target);
@@ -510,7 +546,7 @@ export function createViewport(
   }
 
   function render(clean = false, useShot = clean || previewShot, includeHidden = clean) {
-    orbit.update();
+    (axisView?.controls ?? orbit).update();
     const restore = [];
     root.traverse(object => {
       if (object === root) return;
@@ -538,7 +574,7 @@ export function createViewport(
     }
     grid.visible = !clean;
     transformHelper.visible =
-      !clean && (!useShot || !shotObject) && Boolean(transform.object);
+      !clean && !measurement.active && (!useShot || (!shotObject && !axisView)) && Boolean(transform.object);
     outline.visible =
       !clean &&
       Boolean(
@@ -590,7 +626,14 @@ export function createViewport(
     }
     withSceneCuts(root, () => {
       updateEmitters();
-      renderer.render(scene, renderCamera);
+      measurement.render(renderCamera, (axisView?.controls ?? orbit).target, clean);
+      const fog = scene.fog;
+      if (axisView?.camera === renderCamera) scene.fog = null;
+      try {
+        renderer.render(scene, renderCamera);
+      } finally {
+        scene.fog = fog;
+      }
     });
     for (const [object, visible] of restore) object.visible = visible;
   }
@@ -639,6 +682,11 @@ export function createViewport(
   return {
     render,
     pickColor,
+    setMeasuring(active) {
+      if (active) pickColor(undefined);
+      measurement.setActive(active);
+      updateControls();
+    },
     toggleColor(callback) {
       const active = !sampler;
       pickColor(active ? callback : undefined);
@@ -655,8 +703,16 @@ export function createViewport(
       shotObject = object;
       outputShot = output;
       previewShot = preview;
-      orbit.enabled = !(preview && object) && !transform.dragging;
-      transform.enabled = !(preview && object);
+      updateControls();
+    },
+    get axisLabel() {
+      return axisLabels[axisView?.axis];
+    },
+    toggleAxis(axis) {
+      axisView = changeAxisView(axisView, axis, camera, orbit.target, renderer.domElement, measurement.invalidate);
+      resizeAxisView(axisView, camera.aspect);
+      measurement.invalidate();
+      updateControls();
     },
     focus(objects) {
       const bounds = new THREE.Box3();
@@ -666,6 +722,16 @@ export function createViewport(
         else bounds.union(item);
       }
       const { center, radius } = bounds.getBoundingSphere(new THREE.Sphere());
+      if (axisView) {
+        const offset = axisView.camera.position.clone().sub(axisView.controls.target);
+        axisView.controls.target.copy(center);
+        axisView.camera.position.copy(center).add(offset);
+        axisView.camera.zoom = Math.min(axisView.controls.maxZoom,
+          axisView.height * Math.min(1, camera.aspect) / Math.max(1, radius * 2.4));
+        axisView.camera.updateProjectionMatrix();
+        axisView.controls.update();
+        return;
+      }
       const vertical = THREE.MathUtils.degToRad(camera.fov / 2);
       const halfFov = Math.min(vertical, Math.atan(Math.tan(vertical) * camera.aspect));
       const distance = THREE.MathUtils.clamp(radius * 1.2 / Math.sin(halfFov), orbit.minDistance * 1.5, orbit.maxDistance);
@@ -676,11 +742,13 @@ export function createViewport(
     },
     highlightEdges,
     reset() {
+      closeAxisView();
       if (savedDefault) useDefaultView();
       else reset();
     },
     useDefaultView,
     useCameraView(object) {
+      closeAxisView();
       if (!object) return useDefaultView();
       savedDefault ??= cameraState();
       object.getWorldPosition(camera.position);
@@ -691,6 +759,7 @@ export function createViewport(
     },
     captureCamera: () => savedDefault ?? cameraState(),
     restoreCamera(state) {
+      closeAxisView();
       savedDefault = undefined;
       restoreCamera(state);
     },
