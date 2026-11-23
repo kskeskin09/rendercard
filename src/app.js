@@ -68,7 +68,8 @@ let timelineRows = [];
 let view;
 let collisions;
 let history = createHistory();
-let savedRevision = history.revision;
+let projectDocument = { handle: null, savedRevision: history.revision };
+let openingProject = false;
 let documentDirty = false;
 let savingProject = false;
 let drag;
@@ -146,12 +147,14 @@ function captureScene() {
       encodeProject(root, duration, animations, atmosphere, undefined, sceneName, renderSize)
     ),
     frame,
+    document: projectDocument,
     selection: [...selected].map((object) => objects.indexOf(object))
   };
 }
 
 function replaceScene(state) {
   const project = decodeProject(JSON.parse(state.project));
+  if (state.document) projectDocument = state.document;
   const freeCameraId = freeViewLabel?.userData.cameraId;
   [...root.children].forEach(disposeObject);
   project.objects.forEach((object) => root.add(object));
@@ -178,8 +181,8 @@ function updateHistory() {
   $('undo').disabled = !history.canUndo;
   $('redo').disabled = !history.canRedo;
   const dirty = presetScene
-    ? presetScene.history.revision !== savedRevision || history.revision !== presetScene.initialRevision
-    : history.revision !== savedRevision;
+    ? presetScene.history.revision !== projectDocument.savedRevision || history.revision !== presetScene.initialRevision
+    : history.revision !== projectDocument.savedRevision;
   if (dirty !== documentDirty) {
     documentDirty = dirty;
     window.rendercardDesktop?.setDocumentDirty(dirty);
@@ -278,7 +281,7 @@ function commitEdit(before, description) {
   updateFollowers();
   if (selected.size > 1 && !drag) setMode(mode);
   const after = captureScene();
-  if (before.project !== after.project) {
+  if (before.project !== after.project || before.document !== after.document) {
     resetPhysics();
     history.remember(before, after, description ?? describeEdit(before, after));
   }
@@ -1602,6 +1605,7 @@ function showPresetScene(show) {
   $('preset-editor').hidden = !show;
   $('create-preset').disabled = show;
   $('save').disabled = show;
+  $('save-as').disabled = show;
   $('open').disabled = show;
 }
 
@@ -2115,6 +2119,14 @@ for (const button of all('[data-view-axis]')) button.onclick = () => switchAxis(
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') view?.pickColor(undefined);
   const key = event.key.toLowerCase();
+  if (event.ctrlKey && !event.altKey && key === 's') {
+    event.preventDefault();
+    if (!event.repeat && !document.querySelector('dialog[open]')) {
+      document.activeElement?.blur();
+      void saveProject(event.shiftKey);
+    }
+    return;
+  }
   if ($('render-settings-dialog').open || $('model-dialog').open || joinDialog.open) return;
   if ($('render-preview').open) {
     if (key === ' ' && document.activeElement?.tagName !== 'BUTTON') {
@@ -2208,9 +2220,10 @@ async function saveOutput(blob, name, label) {
   return true;
 }
 
-$('save').onclick = async () => {
-  if (savingProject) return;
+async function saveProject(saveAs) {
+  if (savingProject || openingProject || presetScene || recording || drag) return;
   const revision = history.revision;
+  const target = projectDocument;
   const viewPose = view?.captureCamera();
   const content = JSON.stringify(
     encodeProject(
@@ -2230,22 +2243,57 @@ $('save').onclick = async () => {
   );
   savingProject = true;
   try {
-    if (await saveOutput(new Blob([content], { type: 'application/json' }), 'sahne.rendercard.json', 'Proje')) {
-      savedRevision = revision;
+    const blob = new Blob([content], { type: 'application/json' });
+    let saved;
+    if (window.rendercardDesktop?.saveProject) {
+      const handle = await window.rendercardDesktop.saveProject(target.handle, await blob.arrayBuffer(), saveAs);
+      saved = Boolean(handle);
+      if (handle) target.handle = handle;
+      status(saved ? 'Proje kaydedildi.' : 'Kaydetme iptal edildi.');
+    } else saved = await saveOutput(blob, 'sahne.rendercard.json', 'Proje');
+    if (saved) {
+      target.savedRevision = revision;
       updateHistory();
     }
+  } catch (error) {
+    console.error('Proje kaydedilemedi.', error);
+    status('Proje kaydedilemedi.');
   } finally {
     savingProject = false;
   }
+}
+$('save').onclick = () => void saveProject(false);
+$('save-as').onclick = () => void saveProject(true);
+$('open').onclick = async () => {
+  if (openingProject || savingProject || recording) return;
+  if (!window.rendercardDesktop?.openProject) return $('project-file').click();
+  openingProject = true;
+  try {
+    const result = await window.rendercardDesktop.openProject();
+    if (result) openProject(result.content, result.handle);
+  } catch (error) {
+    console.error('Proje açılamadı.', error);
+    status('Proje açılamadı. Geçerli bir Rendercard JSON dosyası seç.');
+  } finally {
+    openingProject = false;
+  }
 };
-$('open').onclick = () => $('project-file').click();
 $('project-file').onchange = async (event) => {
   const file = event.target.files[0];
   event.target.value = '';
-  if (!file) return;
+  if (!file || openingProject || savingProject || recording || presetScene) return;
+  openingProject = true;
   try {
-    const project = decodeProject(JSON.parse(await file.text()));
+    openProject(await file.text(), null);
+  } finally {
+    openingProject = false;
+  }
+};
+function openProject(content, handle) {
+  try {
+    const project = decodeProject(JSON.parse(content));
     edit(() => {
+      projectDocument = { handle, savedRevision: history.revision };
       if (measuring) setMeasure(false);
       [...root.children].forEach(disposeObject);
       project.objects.forEach((object) => root.add(object));
@@ -2265,11 +2313,47 @@ $('project-file').onchange = async (event) => {
       frameTo(0);
       refresh();
     });
-    savedRevision = history.revision;
+    projectDocument.savedRevision = history.revision;
     updateHistory();
     status('Proje açıldı.');
   } catch {
     status('Proje açılamadı. Geçerli bir Rendercard JSON dosyası seç.');
+  }
+}
+
+$('import-model').onclick = () => $('model-file').click();
+$('model-file').onchange = async event => {
+  const files = [...event.target.files];
+  event.target.value = '';
+  if (!files.length || recording || savingProject || openingProject) return;
+  setPlaying(false);
+  const workspace = document.querySelector('.workspace');
+  const topbar = document.querySelector('.topbar');
+  workspace.inert = topbar.inert = true;
+  recording = true;
+  status('Model hazırlanıyor…');
+  try {
+    const { importModelFiles } = await import('./model-import.js');
+    const { object, missing } = await importModelFiles(files);
+    edit(() => {
+      root.add(object);
+      groundObject(object);
+      collisions?.separate(root, object);
+      setWireframe(wireframe);
+      select(object);
+      setMode('translate');
+    }, '3B model içe aktar');
+    const message = missing
+      ? 'Model içe aktarıldı. Eksik malzeme veya doku için yardımcı dosyaları da seç.'
+      : object.name + ' içe aktarıldı.';
+    status(message);
+    if (missing) toast(message, 'warning');
+  } catch (error) {
+    console.error('Model içe aktarılamadı.', error);
+    status('Model içe aktarılamadı. Geçerli bir GLB veya OBJ dosyası seç.');
+  } finally {
+    recording = false;
+    workspace.inert = topbar.inert = false;
   }
 };
 

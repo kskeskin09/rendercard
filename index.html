@@ -48,9 +48,12 @@
           aria-label="Projeyi aç"
         ></button
         ><input id="project-file" type="file" accept=".json" hidden />
-        <button id="save" class="quiet">
+        <button id="save" class="quiet" title="Kaydet (Ctrl+S)" aria-label="Kaydet">
           <span data-icon="save"></span><span>Kaydet</span>
         </button>
+        <button id="save-as" class="quiet" title="Farklı kaydet (Ctrl+Shift+S)" aria-label="Farklı Kaydet">Farklı Kaydet</button>
+        <button id="import-model" class="quiet" title="GLB veya OBJ modelini içe aktar" aria-label="Model içe aktar"><span data-icon="box"></span><span>Model içe aktar</span></button>
+        <input id="model-file" type="file" accept=".glb,.obj,.mtl,.png,.jpg,.jpeg,.webp,.bin" multiple hidden />
         <div class="export-wrap">
           <button
             id="export"

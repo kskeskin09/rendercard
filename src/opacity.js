@@ -27,7 +27,7 @@ export function updateOpacity(object, includeHidden = false) {
     const alpha = overall * ((part?.opacity ?? 100) / 100);
     material.visible = alpha > 0 && (includeHidden || !part?.hidden);
     if (material.visible) maximum = Math.max(maximum, alpha);
-    const transparent = alpha < 1;
+    const transparent = alpha < 1 || Boolean(material.map && part?.alphaBlend);
     if (material.transparent !== transparent) {
       material.transparent = transparent;
       material.depthWrite = !transparent;

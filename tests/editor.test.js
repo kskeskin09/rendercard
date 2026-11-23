@@ -882,3 +882,17 @@ test('size and position curves are independent and old projects keep their share
   assert.deepEqual(saved.userData.sizeSpeedProfile, [200, 100, 0]);
   assert.deepEqual(saved.userData.speedProfile, [100, 100, 100]);
 });
+
+test('imported OBJ material groups survive project serialization', async () => {
+  const { importMeshParts } = await import('../src/model-import.js');
+  const { OBJLoader } = await import('three/addons/loaders/OBJLoader.js');
+  const { makeImportedMesh } = await import('../src/model.js');
+  const parsed = new OBJLoader().parse('o Üçgen\nv 0 0 0\nv 2 0 0\nv 0 1 0\nf 1 2 3');
+  parsed.children[0].material.color.set('#637ec4');
+  const root = new Group();
+  root.add(makeImportedMesh(importMeshParts(parsed), 'Üçgen'));
+  const loaded = decodeProject(encodeProject(root, 120)).objects[0];
+  assert.equal(loaded.name, 'Üçgen');
+  assert.equal(loaded.geometry.index.count, 3);
+  assert.equal(loaded.material[0].color.getHexString(), '637ec4');
+});

@@ -2,6 +2,14 @@ import {
   BoxGeometry,
   BufferGeometry,
   Color,
+  DataTexture,
+  ClampToEdgeWrapping,
+  MirroredRepeatWrapping,
+  RepeatWrapping,
+  LinearFilter,
+  SRGBColorSpace,
+  DoubleSide,
+  FrontSide,
   CylinderGeometry,
   Float32BufferAttribute,
   Group,
@@ -59,7 +67,7 @@ export const types = {
   camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 12;
+export const projectVersion = 13;
 export const shapeSides = [3, 4, 5, 6, 8, 16, 32, 64];
 export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid'].includes(type);
 const channels = ['position', 'rotation', 'scale'];
@@ -163,13 +171,36 @@ export function geometry(type, detail = 24, settings = settingsDefaults) {
   return result;
 }
 
+const wraps = { clamp: ClampToEdgeWrapping, repeat: RepeatWrapping, mirror: MirroredRepeatWrapping };
+
+function applySurface(material, settings) {
+  material.roughness = settings.roughness ?? .62;
+  material.metalness = settings.metalness ?? .07;
+  material.side = settings.doubleSided ? DoubleSide : FrontSide;
+  material.alphaTest = settings.alphaTest ?? 0;
+  applyTile(material, settings);
+  if (!material.map && settings.texture) {
+    const { data, width, height, flipY, wrapS, wrapT } = settings.texture;
+    const pixels = Uint8Array.from(atob(data), char => char.charCodeAt(0));
+    const texture = new DataTexture(pixels, width, height);
+    texture.colorSpace = SRGBColorSpace;
+    texture.flipY = flipY;
+    texture.wrapS = wraps[wrapS];
+    texture.wrapT = wraps[wrapT];
+    texture.minFilter = texture.magFilter = LinearFilter;
+    texture.needsUpdate = true;
+    material.map = texture;
+    material.needsUpdate = true;
+  }
+}
+
 function material(color, settings) {
   const result = new MeshStandardMaterial({
     color,
     roughness: 0.62,
     metalness: 0.07
   });
-  applyTile(result, settings);
+  applySurface(result, settings);
   return result;
 }
 
@@ -179,7 +210,8 @@ export function materialsOf(object) {
 
 function partSurface(object, part) {
   const { finish, tile, tileScale, tileFit, tileColorMode, surfaceColor } = object.userData;
-  return finish === 'parts' ? part : { ...part, finish, tile, tileScale, tileFit, tileColorMode, color: surfaceColor };
+  return finish === 'parts' ? part : { ...part, finish, tile, tileScale, tileFit, tileColorMode,
+    color: surfaceColor, texture: null, alphaTest: 0 };
 }
 
 export function updateMeshSurface(object) {
@@ -187,7 +219,7 @@ export function updateMeshSurface(object) {
   for (const [index, surface] of object.material.entries()) {
     const settings = partSurface(object, data.parts[index]);
     surface.color.set(settings.color);
-    applyTile(surface, settings);
+    applySurface(surface, settings);
   }
 }
 
@@ -262,11 +294,18 @@ function bakedParts(object, buffer, matrix) {
   const parts = new Map();
   for (const { start, count, materialIndex } of groups) {
     const source = settings[materialIndex];
+    const appearance = source === object.userData ? source : partSurface(object, source);
     let record = parts.get(materialIndex);
     if (!record) {
       record = {
         part: {
-          ...settingsOf(source === object.userData ? source : partSurface(object, source)),
+          ...settingsOf(appearance),
+          texture: appearance.texture,
+          roughness: appearance.roughness,
+          metalness: appearance.metalness,
+          doubleSided: appearance.doubleSided,
+          alphaBlend: appearance.alphaBlend,
+          alphaTest: appearance.alphaTest,
           type: 'baked',
           color: '#' + surfaces[materialIndex].color.getHexString(),
           matrix: matrix.toArray(),
@@ -325,6 +364,12 @@ function makeJoinedMesh(parts, name = 'Birleşik ağ', data) {
   if (settings.finish !== 'parts') updateMeshSurface(mesh);
   mesh.visible = !settings.hidden;
   updateOpacity(mesh);
+  return mesh;
+}
+
+export function makeImportedMesh(parts, name) {
+  const mesh = makeJoinedMesh(parts, name);
+  fitPivot(mesh);
   return mesh;
 }
 
@@ -617,10 +662,22 @@ export function decodeProject(project) {
     /^#[0-9a-f]{6}$/i.test(data.color) &&
     levels.includes(data.detail) &&
     validSettings(data);
+  const validTexture = texture => texture == null || (
+    Number.isInteger(texture.width) && texture.width >= 1 && texture.width <= 1024 &&
+    Number.isInteger(texture.height) && texture.height >= 1 && texture.height <= 1024 &&
+    typeof texture.flipY === 'boolean' &&
+    Object.hasOwn(wraps, texture.wrapS) && Object.hasOwn(wraps, texture.wrapT) &&
+    typeof texture.data === 'string' &&
+    texture.data.length === Math.ceil(texture.width * texture.height * 4 / 3) * 4 &&
+    /^[A-Za-z0-9+/]*={0,2}$/.test(texture.data));
   const validBaked = part =>
     part?.type === 'baked' &&
     /^#[0-9a-f]{6}$/i.test(part.color) &&
     validSettings(part) &&
+    validTexture(part.texture) &&
+    [part.roughness, part.metalness, part.alphaTest].every(value => value == null || (Number.isFinite(value) && value >= 0 && value <= 1)) &&
+    (part.alphaBlend == null || typeof part.alphaBlend === 'boolean') &&
+    (part.doubleSided == null || typeof part.doubleSided === 'boolean') &&
     Array.isArray(part.vertices) && part.vertices.length >= 9 &&
     part.vertices.length % 3 === 0 && part.vertices.every(Number.isFinite) &&
     Array.isArray(part.normals) && part.normals.length === part.vertices.length &&
@@ -702,7 +759,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, projectVersion].includes(project?.version) ||
     (project.renderSize != null && !validRenderSize(project.renderSize)) ||
     (project.name != null && (typeof project.name !== 'string' || project.name.length > 80 || !project.name.trim())) ||
     !validFrame(project.duration) ||

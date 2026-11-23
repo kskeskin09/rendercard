@@ -13,7 +13,7 @@ function materialsFor(object) {
     result.userData = {};
     result.opacity = opacity * ((object.userData.parts?.[index]?.opacity ?? 100) / 100);
     result.visible = result.opacity > 0;
-    result.transparent = result.opacity < 1;
+    result.transparent = material.transparent || result.opacity < 1;
     result.wireframe = false;
     if (material.map) {
       const tint = material.userData.tileMapping;

@@ -7,13 +7,17 @@ const {
   protocol,
   session
 } = require('electron');
-const { writeFile } = require('node:fs/promises');
+const { readFile, writeFile, rename, rm, stat } = require('node:fs/promises');
+const { randomUUID } = require('node:crypto');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 const scheme = 'rendercard';
 const appUrl = 'rendercard://editor/';
 const dirtyWindows = new WeakSet();
+const projectPaths = new WeakMap();
+const projectName = 'sahne.rendercard.json';
+const maxFileSize = 256 * 1024 * 1024;
 const saveFormats = new Map([
   [
     'sahne.rendercard.json',
@@ -59,7 +63,7 @@ function serveEditor() {
     );
     const relative = path.relative(root, target);
     const bundledAsset =
-      /^[\w-]+\.(js|css)$/.test(path.basename(relative)) &&
+      /^[\w.-]+\.(js|css)$/.test(path.basename(relative)) &&
       path.dirname(relative) === 'assets';
     if (relative !== 'index.html' && !bundledAsset)
       return new Response(null, { status: 404 });
@@ -71,7 +75,7 @@ function serveEditor() {
       const headers = new Headers(response.headers);
       headers.set(
         'Content-Security-Policy',
-        "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src 'self'"
+        "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src 'self' blob: data:"
       );
       return new Response(response.body, { status: response.status, headers });
     } catch {
@@ -81,6 +85,53 @@ function serveEditor() {
 }
 
 function registerSave() {
+  function projectOwner(event) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    const sender = event.senderFrame;
+    if (!window || !sender || sender.parent || sender.url !== appUrl)
+      throw new Error('Geçersiz proje isteği.');
+    if (!projectPaths.has(window)) projectPaths.set(window, new Map());
+    return { window, paths: projectPaths.get(window) };
+  }
+  ipcMain.handle('rendercard:open-project', async event => {
+    const { window, paths } = projectOwner(event);
+    const result = await dialog.showOpenDialog(window, {
+      title: 'Projeyi aç', properties: ['openFile'], filters: [saveFormats.get(projectName)]
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    const [file] = result.filePaths;
+    if ((await stat(file)).size > maxFileSize) throw new Error('Proje dosyası çok büyük.');
+    const content = await readFile(file, 'utf8');
+    const handle = randomUUID();
+    paths.set(handle, file);
+    return { content, handle };
+  });
+  ipcMain.handle('rendercard:save-project', async (event, handle, bytes, saveAs) => {
+    const { window, paths } = projectOwner(event);
+    if ((handle !== null && !paths.has(handle)) || typeof saveAs !== 'boolean' ||
+        !(bytes instanceof ArrayBuffer) || !bytes.byteLength || bytes.byteLength > maxFileSize)
+      throw new Error('Geçersiz proje kaydı.');
+    let file = paths.get(handle);
+    if (!file || saveAs) {
+      const result = await dialog.showSaveDialog(window, {
+        title: saveAs ? 'Farklı kaydet' : 'Dosyayı kaydet',
+        defaultPath: file ?? path.join(app.getPath('documents'), projectName),
+        filters: [saveFormats.get(projectName)]
+      });
+      if (result.canceled || !result.filePath) return null;
+      file = result.filePath;
+      handle = randomUUID();
+    }
+    const temporary = path.join(path.dirname(file), '.rendercard-' + randomUUID() + '.tmp');
+    try {
+      await writeFile(temporary, new Uint8Array(bytes), { flag: 'wx' });
+      await rename(temporary, file);
+    } finally {
+      await rm(temporary, { force: true }).catch(() => {});
+    }
+    paths.set(handle, file);
+    return handle;
+  });
   ipcMain.on('rendercard:document-dirty', (event, dirty) => {
     const owner = BrowserWindow.fromWebContents(event.sender);
     const sender = event.senderFrame;

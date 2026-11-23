@@ -80,6 +80,12 @@ Grup çözülürken dönüşümler çocuk nesnelere aktarılır. Grubu çözebil
 
 Sahne araçlarındaki **Birleştir** düğmesi, birbirine değmeyen nesneleri de tek ağda toplar. Pozitif nesneleri birleştirdiğinizde **Orta**, kaynak nesnelerin merkezlerinin ortalamasıdır. Bu nokta iki ayrı nesne arasında boşluğa düşebilir. Seçimde hareketli nesneler varsa onayınızla geçerli karedeki geometri birleştirilir ve kaynak hareketler kaldırılır. Bağımsız anahtar kareleri korumak için **Grupla** seçeneğini kullanabilirsiniz. Birleştirme renkleri korur ve negatif nesnelerin açtığı delikleri kalıcılaştırır.
 
+## Kayıt ve model içe aktarma
+
+Windows uygulamasında **Kaydet** veya `Ctrl+S` ilk kullanımda bir dosya seçtirir. Açılan veya kaydedilen projede sonraki kayıt aynı dosyayı günceller. **Farklı Kaydet** veya `Ctrl+Shift+S` ile yeni bir hedef seçebilirsiniz.
+
+**Model içe aktar** ile GLB veya OBJ ekleyebilirsiniz. OBJ malzemeleri için OBJ, MTL ve doku dosyalarını birlikte seçin. Model tek bir düzenlenebilir ağ olarak eklenir. Desteklenen malzemeler ve temel renk dokuları projeye gömülür. Dosyadaki hazır animasyonlar, iskelet ve özel malzeme efektleri bu aşamada aktarılmaz.
+
 ## 3B model dışa aktarma
 
 **Render al → 3B model dışa aktar** menüsünden sahne veya seçim kapsamını belirleyin. **GLB** ve **glTF**, geometriyi, renkleri, dokuları ve isteğe bağlı animasyonları taşır. GLB ikili tek dosyadır. glTF JSON’dur ve kaynakları içine gömer. Tile dokuları UV koordinatlarıyla saklanır. Köşelerdeki doku geçişleri editör görünümünden farklı olabilir.

@@ -17,7 +17,7 @@ export function createHistory() {
       return label;
     },
     remember(before, after, description = 'Sahneyi düzenle') {
-      if (before.project === after.project) return;
+      if (before.project === after.project && before.document === after.document) return;
       const next = Symbol();
       undo.push({ before, after, description, previousRevision: revision, nextRevision: next });
       revision = next;
