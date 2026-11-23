@@ -444,3 +444,83 @@ test('opacity and absolute tile size survive saving independently of the preview
   setTileSize(restored.material, 1);
   assert.equal(restored.material.userData.tileSize.value, 1);
 });
+
+test('a negative mesh carves a recoverable hole and becomes visible again outside the positive', async () => {
+  const { sceneCuts } = await import('../src/boolean-cuts.js');
+  const { computeMeshVolume } = await import('three-bvh-csg');
+  const root = new Group();
+  const block = makeObject('box');
+  const hole = makeObject('box', 'Delik', '#ffffff', 24, { negative: true });
+  block.scale.set(4, 2, 4);
+  hole.scale.set(2, 3, 2);
+  root.add(block, hole);
+  const first = sceneCuts(root);
+  close(computeMeshVolume(first.cuts.get(block)), 0.75);
+  assert(first.cutters.has(hole));
+  assert(sceneCuts(root).cuts.get(block) === first.cuts.get(block));
+  hole.position.x = 5;
+  assert.equal(sceneCuts(root).cuts.size, 0);
+  assert.equal(sceneCuts(root).cutters.size, 0);
+  hole.position.set(0, 0, 0);
+  hole.scale.set(6, 6, 6);
+  assert.equal(sceneCuts(root).cuts.get(block).drawRange.count, 0);
+});
+
+test('project name, prism variants, cut polarity and tile preferences survive saving', () => {
+  const root = new Group();
+  const prism = makeObject('prism', 'Altıgen', '#ffffff', 24, {
+    negative: true, sides: 6, tileFit: true, tileColorMode: 'custom', tileScale: 2
+  });
+  const pyramid = makeObject('pyramid');
+  root.add(prism, pyramid);
+  const restored = decodeProject(encodeProject(root, 120, undefined, undefined, undefined, 'Avlu'));
+  assert.equal(restored.name, 'Avlu');
+  assert.equal(restored.objects[0].userData.sides, 6);
+  assert.equal(restored.objects[0].userData.negative, true);
+  assert.equal(restored.objects[0].userData.tileFit, true);
+  assert.equal(restored.objects[0].userData.tileColorMode, 'custom');
+  assert.equal(restored.objects[0].userData.tileScale, 2);
+  close(bounds(restored.objects[0]).getSize(new Vector3()).x, 1);
+  assert.equal(restored.objects[1].userData.type, 'pyramid');
+});
+
+test('joining a positive and negative permanently stores the cut and consumes the cutter', async () => {
+  const { sceneCuts } = await import('../src/boolean-cuts.js');
+  const { computeMeshVolume } = await import('three-bvh-csg');
+  const root = new Group();
+  const positive = makeObject('box');
+  positive.scale.set(4, 2, 4);
+  const cutter = makeObject('prism', 'Delik', '#ffffff', 24, { negative: true });
+  cutter.scale.set(2, 3, 2);
+  root.add(positive, cutter);
+  const result = sceneCuts(root);
+  const expected = computeMeshVolume(result.cuts.get(positive)) * 32;
+  const joined = joinMeshes([positive, cutter]);
+  assert.equal(root.children.length, 1);
+  assert.equal(joined.userData.parts[0].type, 'baked');
+  assert.equal(joined.userData.negative, false);
+  close(computeMeshVolume(joined.geometry), expected);
+  const saved = decodeProject(encodeProject(root, 120)).objects[0];
+  close(computeMeshVolume(saved.geometry), expected);
+  assert.equal(sceneCuts(root).cutters.size, 0);
+});
+
+test('a camera can pass through a baked opening and stops against the remaining solid wall', async () => {
+  await initializeCollisions();
+  const root = new Group();
+  const wall = makeObject('box', 'Duvar', '#ffffff', 24, { solid: true });
+  wall.scale.set(4, 4, 1);
+  const opening = makeObject('box', 'Geçit', '#ffffff', 24, { negative: true });
+  opening.scale.set(1.5, 2.5, 2);
+  root.add(wall, opening);
+  const camera = makeObject('camera');
+  camera.position.set(0, 0, -3);
+  root.add(camera);
+  const target = new Vector3(0, 0, 3);
+  close(followCamera(root, camera, target).distanceTo(target), 0);
+  joinMeshes([wall, opening]);
+  close(followCamera(root, camera, target).distanceTo(target), 0);
+  camera.position.x = 1.2;
+  const blocked = followCamera(root, camera, new Vector3(1.2, 0, 3));
+  assert.ok(blocked.z < -0.5 && blocked.z > -1);
+});

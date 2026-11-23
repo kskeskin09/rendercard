@@ -23,22 +23,24 @@ Animasyon 30 FPS olarak WebM veya MP4 biçiminde yazılır. Tarayıcı sürümü
 
 ## İlk sahnenizi yapın
 
-1. Sol panelden **Kutu** veya **Küre** ekleyin. Sağ panelde konumu, dönüşü, ölçeği ve rengi ayarlayın. Dikdörtgen bir prizma için kutunun eksenlerini farklı oranlarda ölçekleyin.
+1. Sol panelden **Kutu** ya da **Şekiller** menüsünden üçgen prizma veya piramit ekleyin. Sağ panelde konumu, dönüşü, boyutu ve rengi ayarlayın. Üstteki sahne adını doğrudan düzenleyebilirsiniz.
 2. Sahne listesinden aynı düzeydeki nesneleri **Shift** ile seçip **Grupla** düğmesine tıklayın. Grup ortak bir dönüşümle hareket eder ve alt nesneler düzenlenebilir kalır.
-3. **Tel kafes** düğmesiyle üçgen kenarlarını görün. Kutunun altı yüzü ikişer üçgenden oluşur. Kürede **Yüzey ayrıntısı** üçgen yoğunluğunu değiştirir. Toplam üçgen sayısı alt çubukta görünür.
+3. **Tel kafes** düğmesiyle üçgen kenarlarını görün. Kutunun altı yüzü ikişer üçgenden oluşur. Prizma veya piramitte **Taban kenarı** ayarıyla yüzey sayısını değiştirebilirsiniz. Toplam üçgen sayısı alt çubukta görünür.
 4. Nesneyi seçip ilk pozda **Kare ekle** düğmesine tıklayın. Zaman çizelgesinde başka bir kareye gidin, nesneyi taşıyın, döndürün veya ölçekleyin ve yeni pozu kaydedin. **Oynat** ile aradaki hareketi izleyin.
-5. **Kaydet** ile düzenlenebilir JSON projesini kaydedin. **Render al** menüsünden PNG veya video oluşturun.
+5. **Kaydet** ile düzenlenebilir JSON projesini kaydedin. **Render al** menüsündeki **Önizleme izle** çıktıyı zaman çizelgesiyle gösterir. Aynı menüden PNG veya video kaydedebilirsiniz.
 
 Örnek sahnedeki **Kutu** hazır bir animasyona sahiptir. `Q` seçim, `G` taşıma, `R` döndürme, `S` ölçekleme, `K` kare ekleme ve `Boşluk` oynatma içindir. `Ctrl+Z` sahne düzenlemelerini geri alır, `Ctrl+Y` yineler.
 
 ## Şekil ve yerleşim
 
 - Boyutlandırma tutamacı karşı kenarı sabit tutar. Sürüklerken **Shift** iki kenarı eşit miktarda değiştirir. Sayısal boyut alanında aynı davranış için **Shift+Enter** kullanın. Dönüşüm tablosunun üstündeki zincir, X, Y ve Z boyutlarının oranını korur.
-- **Yerleşim** bölümünde üç eksenin merkez noktasını ayrı seçin. Merkez seçimi modelin sahnedeki yerini korur, konum alanları seçilen yeni noktayı gösterir. Boyut değiştiğinde merkez noktası yeni sınıra uyarlanır. Birden fazla nesne seçiliyken **Hizala** komutları, son seçilen nesnenin merkez noktasını referans alır. Sahne görünümündeki **Merkez noktası** düğmesi sahnedeki noktaları gösterir.
+- **Yerleşim** bölümünde üç eksenin merkez noktasını ayrı seçin. Merkez seçimi modelin sahnedeki yerini korur ve konum alanları seçilen yeni noktayı gösterir. **Hizala** komutları ilk seçilen nesnenin merkezini referans alır. Bu nesne listede daha koyu işaretlenir. **Sahne** listesi daraltıldığında yalnızca seçili nesneler görünür.
 - **Zemine bitiştir**, en uç kenarı veya seçili merkez noktasını zemine taşır. **Katılık**, taşıma sırasında yüzeyde durdurur. Açarken bir çakışma varsa nesnelerin adlarını gösterir ve sahneyi yerinde bırakır.
 - **Yakalama** menüsünde aynı anda bir mod kullanılır. **Tam konumlar** taşıma ve boyutlandırmayı seçilen aralığın katlarına yakalar. Oran kilidinde düzenlenen eksen yakalanır ve diğer boyutlar ona göre orantılanır. Varsayılan hassasiyet 1 sahne birimidir. **Yüzeye yakala** yakın temas noktasını arar ve sürüklemede uygun kenarları hizalar.
 - Kutudaki **Kenar yuvarlama** X, Y ve Z eksenlerine paralel kenarlarda ayrı ayarlanır. Örneğin sadece Y değerini artırmak, üst ve alt yüzeyi düz bırakıp düşey kenarları yuvarlar. Küpte bütün eksenleri %50 yapmak küre verir. İnce ve eşit X–Z boyutlu bir kutuda üstten görünüş çember olur. Çim ve asfalt dahil tüm desenler %100 ölçekte bir zemin karesi boyutundadır. %200, karonun kenarını iki katına çıkarır.
 - Nesne listesinin solundaki göz, nesneyi düzenleme önizlemesinde gösterir veya gizler. **Opaklık** hem önizlemeyi hem dışa aktarılan görüntüyü etkiler. %0 tamamen saydam, %100 opaktır. Gizli ve saydam katı nesneler temas kontrolünde kalır. Rengi paletten seçebilir veya HEX, RGB ve HSL biçimlerinde girebilirsiniz.
+- **Yüzeye sığdır** her yüzeye bir desen yerleştirir ve yüzde ayarını saklar. **Varsayılan** karonun kendi rengini, **Özel** renk paletindeki seçiminizi kullanır.
+- **Yerleşim → Nesne işlemi → Negatif · Delik aç** ile bir kesici oluşturun. Negatif nesne pozitiflerle kesiştiğinde kesişim hacmini çıkarır. Tek başına normal görünür. Seçip **Birleştir** dediğinizde kesim tek bir ağın geometrisine kaydedilir.
 - **Işık** ile bağımsız bir noktasal ışık yerleştirin. **Varsayılan ışık** sahneyi hazır ışıklarla aydınlatır. Bir cismin **Işık yay** seçeneği, cismin yüzeyini parlatır ve merkezini takip eden bir ışık ekler. **Sis** menüsünden paletle renk seçebilir, başlangıç ve tam sis mesafesini belirleyebilirsiniz.
 
 ## Animasyon sahneleri
@@ -53,7 +55,7 @@ Dönüşte **Kısa yol** veya **Uzun yol** yönelimi izler. **X, Y, Z açıları
 
 **Kamera** eklediğinizde yeni kamera düzenleme görünümünüzün konum ve açısını kopyalar. Serbest düzenleme görünümünüz **Varsayılan** olarak kalır. Zaman çizelgesindeki **Kamera → Bu karede geç** komutu seçili animasyona kesme ekler. **Kamerayı önizle** kesmeleri çizelgeyi tararken gösterir. Oynatma ve dışa aktarma ilgili karedeki kamerayı kullanır.
 
-Kamera sıfırlama düğmesine sol tıklamak varsayılan görünümü açar. Sağ tıklamak kamera listesini açar. **Kamera takibi** seçilen nesnenin merkezine bakar ve takip başlarken ölçülen uzaklığı ve yönü korur. **Katı cisimlerden etkilen** açıkken kamera engel boyunca hareket edebilir ve yol açılınca takip konumuna geri döner. **Mesafeyi yeniden al** mevcut konumu yeni takip konumu olarak kullanır.
+Kamera sıfırlama düğmesine sol tıklamak varsayılan görünümü açar. Sağ tıklayıp kamera seçtiğinizde o açıdan serbestçe dolaşabilirsiniz. Oynatmayı duraklatınca son kamera açısı korunur. Kamera silinirse ona ait geçiş işaretleri de kalkar. **Kamera takibi** seçilen nesnenin merkezine bakar ve takip başlarken ölçülen uzaklığı ve yönü korur. **Katı cisimlerden etkilen** açıkken kamera engel boyunca hareket edebilir ve yol açılınca takip konumuna geri döner. **Mesafeyi yeniden al** mevcut konumu yeni takip konumu olarak kullanır.
 
 ## Presetler
 
@@ -61,4 +63,4 @@ Kamera sıfırlama düğmesine sol tıklamak varsayılan görünümü açar. Sa�
 
 Grup çözülürken dönüşümler çocuk nesnelere aktarılır. Grubu çözebilmek için grubun anahtar karelerini kaldırın ve üç eksendeki grup ölçeğini eşitleyin.
 
-Sahne araçlarındaki **Birleştir** düğmesi, seçili ve animasyonsuz nesnelerin üçgenlerini tek bir ağda toplar ve renklerini korur. Kesişen yüzeyler olduğu gibi kalır.
+Sahne araçlarındaki **Birleştir** düğmesi, seçili ve animasyonsuz nesnelerin üçgenlerini tek bir ağda toplar ve renklerini korur. Pozitif nesneler birbiri içine yerleştirildiyse kendi yüzeylerini korur. Seçimdeki negatif nesnelerin açtığı delikler kalıcılaşır.

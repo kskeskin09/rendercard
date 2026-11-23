@@ -23,6 +23,8 @@ const icons = {
     '<rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   box: '<path d="m12 2 9 5v10l-9 5-9-5V7l9-5Zm0 10 9-5m-9 5L3 7m9 5v10"/>',
+  prism: '<path d="m3 16 6-11 6 11H3Zm6-11 5-2 7 11-6 2m6-2v3l-6 4H3v-5m12 0v5"/>',
+  pyramid: '<path d="m12 3 9 14-9 4-9-4 9-14Zm0 0v18m-9-4 9-3 9 3"/>',
   sphere:
     '<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>',
   group:

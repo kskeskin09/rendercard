@@ -1,6 +1,6 @@
-import { applyTile, setTileSize, tiles } from './tiles.js';
+import { applyTile, setTileOptions, setTileSize, tiles } from './tiles.js';
 import { changePivot, groundObject } from './spatial.js';
-import { setDetail } from './model.js';
+import { isPrimitive, shapeSides, setDetail } from './model.js';
 import { colorMarkup, bindColor } from './color-editor.js';
 import { rotationPaths } from './motion.js';
 import { speedMarkup, bindSpeed } from './speed-graph.js';
@@ -33,7 +33,7 @@ const vectorFields = (id, label) =>
 
 export function settingsMarkup(object) {
   const type = object.userData.type;
-  const primitive = type === 'box' || type === 'sphere';
+  const primitive = isPrimitive(type);
   return (
     '<div class="inspector-block"><h3>Yerleşim</h3>' +
     (type === 'light'
@@ -43,6 +43,7 @@ export function settingsMarkup(object) {
     (!object.isLight && !object.isCamera
       ? '<label class="check-field" title="Fiziksel ivme modunda Y = 0 yüzeyine temas ve sekme."><input id="ground-reaction" type="checkbox"> Zemine tepki verir</label>'
       : '') +
+    (object.isMesh ? '<label class="field" title="Negatif bir nesne pozitif nesneye girdiğinde kesişim hacmini çıkarır. Boştayken normal görünür.">Nesne işlemi<select id="object-sign"><option value="positive">Pozitif · Hacim ekle</option><option value="negative">Negatif · Delik aç</option></select></label>' : '') +
     '<label class="field" title="Nesnenin alt kenarını veya seçili merkezini sahne zeminiyle hizalar.">Zemine bitiştir<select id="object-ground"><option value="">Bir nokta seç</option><option value="edge">En uç kenarı</option><option value="center">Merkezi</option></select></label>' +
     '<div class="field" title="Konum ve hizalama işlemlerinin referans noktası.">Merkez noktası<div class="axis-fields pivot-fields">' +
     axes
@@ -77,11 +78,13 @@ export function settingsMarkup(object) {
           ['tile', 'Tile (döşeme)']
         ]) +
         '</select></label>' +
-        colorMarkup +
         '<div id="tile-settings" hidden><label class="field">Tile<select id="object-tile">' +
         options(Object.entries(tiles)) +
         '</select></label>' +
-        '<label class="field" title="%100, zemindeki bir ızgara karesi büyüklüğündedir. %200, her kenarı iki kat büyütür.">Tile boyutu (%)<input id="object-tile-scale" aria-label="Tile boyutu (%)" type="number" min="0.1" max="2000" step="any"></label></div>'
+        '<label class="field">Renk<select id="tile-color-mode"><option value="default">Varsayılan</option><option value="custom">Özel</option></select></label>' +
+        '<label class="check-field" title="Deseni yüzeye bir kez sığdırır. Yüzde değeri, sığdırma kapatıldığında yeniden kullanılır."><input id="tile-fit" type="checkbox"> Yüzeye sığdır</label>' +
+        '<label class="field" title="%100, zemindeki bir ızgara karesi büyüklüğündedir. %200, her kenarı iki kat büyütür.">Tile boyutu (%)<input id="object-tile-scale" aria-label="Tile boyutu (%)" type="number" min="0.1" max="2000" step="any"></label></div>' +
+        '<div id="custom-color-settings">' + colorMarkup + '</div>'
       : type === 'light'
         ? colorMarkup +
           '<label class="field" title="%0 düşük ama görünür güç, %100 yüksek parlaklık.">Işık gücü (%)<input id="light-power" type="number" min="0" max="100" step="any"></label>'
@@ -117,6 +120,10 @@ export function settingsMarkup(object) {
           [48, 'Yüksek']
         ]) +
         '</select></label></div>'
+      : '') +
+    (type === 'prism' || type === 'pyramid'
+      ? '<div class="inspector-block"><h3>Geometri</h3><label class="field" title="Kenar sayısını artırarak silindire veya koniye yaklaşabilirsin.">Taban kenarı<select id="object-sides">' +
+        options(shapeSides.map(sides => [sides, sides])) + '</select></label></div>'
       : '') +
     '<div class="inspector-block"><h3>Animasyon</h3>' +
     '<label class="field" title="Özel bir sahne seçilirse nesne o animasyon seçiliyken görünür.">Nesnenin sahnesi<select id="scene-clip"></select></label>' +
@@ -159,6 +166,14 @@ export function bindSettings(
 ) {
   const $ = (id) => panel.querySelector('#' + id);
   const data = object.userData;
+  if ($('object-sign')) {
+    const sign = $('object-sign');
+    sign.value = data.negative ? 'negative' : 'positive';
+    sign.onchange = () => edit(() => {
+      data.negative = sign.value === 'negative';
+      return changed(object);
+    }, 'Nesnenin işaretini değiştir');
+  }
   if ($('ground-reaction')) {
     $('ground-reaction').checked = data.reactsToGround;
     $('ground-reaction').onchange = (event) =>
@@ -250,13 +265,19 @@ export function bindSettings(
     };
   }
   if ($('object-finish')) {
+    const repaintTileFields = () => {
+      $('tile-settings').hidden = data.finish !== 'tile';
+      $('custom-color-settings').hidden = data.finish === 'tile' && data.tileColorMode === 'default';
+    };
     $('object-finish').value = data.finish;
     $('object-tile').value = data.tile;
-    $('tile-settings').hidden = data.finish !== 'tile';
+    $('tile-color-mode').value = data.tileColorMode;
+    $('tile-fit').checked = data.tileFit;
+    repaintTileFields();
     $('object-finish').onchange = (event) =>
       edit(() => {
         data.finish = event.target.value;
-        $('tile-settings').hidden = data.finish !== 'tile';
+        repaintTileFields();
         applyTile(object.material, data);
       });
     $('object-tile').onchange = (event) =>
@@ -264,9 +285,19 @@ export function bindSettings(
         data.tile = event.target.value;
         applyTile(object.material, data);
       });
+    $('tile-color-mode').onchange = event => edit(() => {
+      data.tileColorMode = event.target.value;
+      setTileOptions(object.material, data);
+      repaintTileFields();
+    }, 'Karo rengini değiştir');
+    $('tile-fit').onchange = event => edit(() => {
+      data.tileFit = event.target.checked;
+      setTileOptions(object.material, data);
+      repaintTileFields();
+    }, 'Karo sığdırmayı değiştir');
     number(
       'object-tile-scale',
-      () => data.tileScale * 100,
+      () => Number((data.tileScale * 100).toFixed(8)),
       0.1,
       2000,
       (value) => {
@@ -312,6 +343,13 @@ export function bindSettings(
     $('object-detail').value = data.detail;
     $('object-detail').onchange = (event) =>
       edit(() => rebuild(Number(event.target.value)));
+  }
+  if ($('object-sides')) {
+    $('object-sides').value = data.sides ?? (data.type === 'prism' ? 3 : 4);
+    $('object-sides').onchange = event => edit(() => {
+      data.sides = Number(event.target.value);
+      return rebuild();
+    }, 'Taban kenarı sayısını değiştir');
   }
   if ($('object-color'))
     bindColor(panel, object.isLight ? object.color : object.material.color, {

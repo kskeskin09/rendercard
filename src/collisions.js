@@ -1,9 +1,10 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Box3, Matrix4, Quaternion, Vector3 } from 'three';
-import { geometry } from './model.js';
+import { partBuffer } from './model.js';
 import { hasKeys } from './clips.js';
 import { slideMovement } from './camera-follow.js';
 import { translateWorld } from './spatial.js';
+import { sceneCuts } from './boolean-cuts.js';
 
 const tolerance = 0.00001;
 const stationary = new Vector3();
@@ -27,7 +28,7 @@ function solidInHierarchy(object) {
   return false;
 }
 
-function shapeFor(buffer, matrix, settings) {
+function shapeFor(buffer, matrix, settings, cut = false) {
   const position = new Vector3().setFromMatrixPosition(matrix);
   const bounds = new Box3();
   const linear = matrix.clone().setPosition(0, 0, 0);
@@ -43,7 +44,7 @@ function shapeFor(buffer, matrix, settings) {
     Math.abs(axes[0].dot(axes[2])) < tolerance &&
     Math.abs(axes[1].dot(axes[2])) < tolerance;
   if (
-    orthogonal &&
+    !cut && orthogonal &&
     settings.type === 'box' &&
     !settings.radius &&
     !settings.edgeRadii?.some(Boolean)
@@ -61,7 +62,7 @@ function shapeFor(buffer, matrix, settings) {
       new Matrix4().compose(position, rotation, new Vector3(1, 1, 1))
     );
   } else if (
-    orthogonal &&
+    !cut && orthogonal &&
     settings.type === 'sphere' &&
     Math.max(...lengths) - Math.min(...lengths) < tolerance
   ) {
@@ -83,12 +84,15 @@ function shapeFor(buffer, matrix, settings) {
         .toArray(vertices, i * 3);
       bounds.expandByPoint(point.add(position));
     }
-    shape = new RAPIER.ConvexPolyhedron(vertices);
+    if (cut) {
+      const count = Math.min(buffer.index.count, buffer.drawRange.count);
+      shape = new RAPIER.TriMesh(vertices, new Uint32Array(buffer.index.array.slice(0, count)));
+    } else shape = new RAPIER.ConvexPolyhedron(vertices);
   }
   return { shape, position, rotation, bounds };
 }
 
-function collect(object, excluded) {
+function collect(object, excluded, { cuts, cutters }) {
   const shapes = [];
   object.updateWorldMatrix(true, true);
   object.traverse((mesh) => {
@@ -107,6 +111,15 @@ function collect(object, excluded) {
       });
       return;
     }
+    if (cutters.has(mesh)) return;
+    const cut = cuts.get(mesh);
+    if (cut || data.parts?.some(part => part.type === 'baked')) {
+      const surface = cut ?? mesh.geometry;
+      if (surface.drawRange.count) shapes.push({
+        ...shapeFor(surface, mesh.matrixWorld, data, true), solid, object: mesh
+      });
+      return;
+    }
     if (data.type !== 'mesh') {
       shapes.push({
         ...shapeFor(mesh.geometry, mesh.matrixWorld, data),
@@ -121,7 +134,7 @@ function collect(object, excluded) {
       .multiply(new Matrix4().makeTranslation(...data.offset));
     for (const part of data.parts) {
       if (!partGeometry.has(part))
-        partGeometry.set(part, geometry(part.type, part.detail, part));
+        partGeometry.set(part, partBuffer(part));
       matrix.fromArray(part.matrix).premultiply(parent);
       shapes.push({
         ...shapeFor(partGeometry.get(part), matrix, part),
@@ -141,10 +154,15 @@ function pairs(root, moving, any = false) {
     hasSolid ||= Boolean(object.userData.solid);
   });
   if (!ready || (!hasSolid && !any)) return [];
-  const movingShapes = collect(moving, new Set());
-  const others = collect(root, excluded);
+  const cuts = sceneCuts(root);
+  const movingShapes = collect(moving, new Set(), cuts);
+  const others = collect(root, excluded, cuts);
   return movingShapes.flatMap((a) =>
-    others.filter((b) => any || b.solid || a.solid).map((b) => ({ a, b }))
+    others.filter((b) => {
+      if (a.object.isMesh && b.object.isMesh &&
+          Boolean(a.object.userData.negative) !== Boolean(b.object.userData.negative)) return false;
+      return any || b.solid || a.solid;
+    }).map((b) => ({ a, b }))
   );
 }
 

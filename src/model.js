@@ -1,5 +1,8 @@
 import {
   BoxGeometry,
+  BufferGeometry,
+  CylinderGeometry,
+  Float32BufferAttribute,
   Group,
   Matrix4,
   Mesh,
@@ -27,6 +30,7 @@ import {
 import { profileTime, accelerationOffset } from './motion.js';
 import { roundedEdges } from './edge-geometry.js';
 import { updateOpacity } from './opacity.js';
+import { releaseCut, sceneCuts } from './boolean-cuts.js';
 
 export const defaultAtmosphere = {
   defaultLight: false,
@@ -39,19 +43,25 @@ export const defaultAtmosphere = {
 export const types = {
   box: 'Kutu',
   sphere: 'Küre',
+  prism: 'Üçgen prizma',
+  pyramid: 'Piramit',
   group: 'Grup',
   mesh: 'Ağ',
   light: 'Işık',
   camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 6;
+export const projectVersion = 7;
+export const shapeSides = [3, 4, 5, 6, 8, 16, 32, 64];
+export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid'].includes(type);
 const channels = ['position', 'rotation', 'scale'];
 
 const settingsDefaults = {
   radius: 0,
   segments: 4,
   solid: false,
+  negative: false,
+  sides: null,
   reactsToGround: true,
   linkedSize: false,
   cameraId: null,
@@ -79,6 +89,8 @@ const settingsDefaults = {
   finish: 'color',
   tile: 'checker',
   tileScale: 1,
+  tileFit: false,
+  tileColorMode: 'default',
   pivot: [0, 0, 0],
   offset: [0, 0, 0]
 };
@@ -98,6 +110,13 @@ export function geometry(type, detail = 24, settings = settingsDefaults) {
   const equalRadii = radii && radii.every((value) => value === radii[0]);
   const uniformRadius = equalRadii ? radii[0] : settings.radius;
   if (type === 'sphere') result = new SphereGeometry(0.5, detail, detail / 2);
+  else if (type === 'prism' || type === 'pyramid') {
+    const sides = settings.sides ?? (type === 'prism' ? 3 : 4);
+    result = new CylinderGeometry(type === 'pyramid' ? 0 : 0.5, 0.5, 1, sides, 1, false, Math.PI / sides);
+    result.computeBoundingBox();
+    const size = result.boundingBox.getSize(new Vector3());
+    result.center().scale(1 / size.x, 1, 1 / size.z);
+  }
   else if (uniformRadius === 0.5 && (equalRadii || !radii)) {
     const resolution = Math.max(24, settings.segments * 8);
     result = new SphereGeometry(0.5, resolution, resolution / 2);
@@ -188,13 +207,66 @@ export function makeObject(
   return object;
 }
 
+export function partBuffer(part) {
+  if (part.type !== 'baked') return geometry(part.type, part.detail, part);
+  const buffer = new BufferGeometry();
+  buffer.setAttribute('position', new Float32BufferAttribute(part.vertices, 3));
+  buffer.setAttribute('normal', new Float32BufferAttribute(part.normals, 3));
+  buffer.setAttribute('uv', new Float32BufferAttribute(part.uvs, 2));
+  buffer.setIndex(part.indices);
+  return buffer;
+}
+
+function bakedParts(object, buffer, matrix) {
+  if (!buffer.drawRange.count) return [];
+  const settings = Array.isArray(object.material) ? object.userData.parts : [object.userData];
+  const surfaces = materialsOf(object);
+  const groups = surfaces.length === 1 ? [{ start: 0, count: buffer.drawRange.count, materialIndex: 0 }] : buffer.groups;
+  const parts = new Map();
+  for (const { start, count, materialIndex } of groups) {
+    const source = settings[materialIndex];
+    let record = parts.get(materialIndex);
+    if (!record) {
+      record = {
+        part: {
+          ...settingsOf(source),
+          type: 'baked',
+          color: '#' + surfaces[materialIndex].color.getHexString(),
+          matrix: matrix.toArray(),
+          opacity: (source.opacity ?? 100) * (source === object.userData ? 1 : object.userData.opacity / 100),
+          hidden: object.userData.hidden || source.hidden,
+          vertices: [],
+          normals: [],
+          uvs: [],
+          indices: []
+        },
+        mapped: new Map()
+      };
+      parts.set(materialIndex, record);
+    }
+    const { part, mapped } = record;
+    for (let i = start; i < start + count; i++) {
+      const index = buffer.index.getX(i);
+      if (!mapped.has(index)) {
+        mapped.set(index, part.vertices.length / 3);
+        for (const [key, attribute] of [
+          ['vertices', buffer.attributes.position], ['normals', buffer.attributes.normal], ['uvs', buffer.attributes.uv]
+        ]) {
+          const offset = index * attribute.itemSize;
+          part[key].push(...attribute.array.subarray(offset, offset + attribute.itemSize));
+        }
+      }
+      part.indices.push(mapped.get(index));
+    }
+  }
+  return [...parts.values()].map(({ part }) => part);
+}
+
 function makeJoinedMesh(parts, name = 'Birleşik ağ', data) {
   const settings = settingsOf(data);
   const matrix = new Matrix4();
   const geometries = parts.map((part) =>
-    geometry(part.type, part.detail, part).applyMatrix4(
-      matrix.fromArray(part.matrix)
-    )
+    partBuffer(part).applyMatrix4(matrix.fromArray(part.matrix))
   );
   const merged = mergeGeometries(geometries, true);
   geometries.forEach((part) => part.dispose());
@@ -220,9 +292,14 @@ export function joinMeshes(objects) {
   const parent = objects[0].parent;
   const center = centerOf(objects);
   const offset = new Matrix4().makeTranslation(-center.x, -center.y, -center.z);
+  const mixed = objects.some(object => object.userData.negative) &&
+    objects.some(object => !object.userData.negative);
+  const { cuts, cutters } = mixed ? sceneCuts(parent, objects) : { cuts: new Map(), cutters: new Set() };
   const parts = objects.flatMap((object) => {
+    if (cutters.has(object)) return [];
     object.updateMatrix();
     const matrix = new Matrix4().multiplyMatrices(offset, object.matrix);
+    if (cuts.has(object)) return bakedParts(object, cuts.get(object), matrix);
     if (object.userData.type === 'mesh') {
       matrix.multiply(new Matrix4().makeTranslation(...object.userData.offset));
       return object.userData.parts.map((part) => ({
@@ -245,12 +322,15 @@ export function joinMeshes(objects) {
       }
     ];
   });
+  if (!parts.length) return null;
   const hidden = parts.every((part) => part.hidden);
   if (hidden)
     parts.forEach((part) => {
       part.hidden = false;
     });
-  const merged = makeJoinedMesh(parts, undefined, { hidden });
+  const merged = makeJoinedMesh(parts, undefined, {
+    hidden, negative: objects.every(object => object.userData.negative)
+  });
   merged.userData.solid = objects.some((object) => object.userData.solid);
   merged.position.copy(center);
   objects.forEach(disposeObject);
@@ -270,6 +350,7 @@ export function disposeObject(object) {
   object.traverse((child) => {
     if (child.isLight) child.dispose();
     if (!child.isMesh) return;
+    releaseCut(child);
     child.geometry.dispose();
     materialsOf(child).forEach((material) => {
       material.map?.dispose();
@@ -364,7 +445,8 @@ export function encodeProject(
   duration,
   animations,
   atmosphere,
-  defaultView
+  defaultView,
+  name
 ) {
   return {
     version: projectVersion,
@@ -372,6 +454,7 @@ export function encodeProject(
     animations,
     atmosphere,
     defaultView,
+    name,
     objects: root.children.map(encodeObject)
   };
 }
@@ -396,6 +479,10 @@ export function decodeProject(project) {
   const validClipId = (id) =>
     typeof id === 'string' && /^(main|clip-[0-9a-f-]{1,36})$/.test(id);
   const validSettings = (data) =>
+    (data.negative == null || typeof data.negative === 'boolean') &&
+    (data.sides == null || shapeSides.includes(data.sides)) &&
+    (data.tileFit == null || typeof data.tileFit === 'boolean') &&
+    (data.tileColorMode == null || ['default', 'custom'].includes(data.tileColorMode)) &&
     (data.radius == null ||
       (Number.isFinite(data.radius) &&
         data.radius >= 0 &&
@@ -460,12 +547,24 @@ export function decodeProject(project) {
     (data.offset == null || numericTuple(data.offset));
   const validPrimitive = (data) =>
     data &&
-    (data.type === 'box' || data.type === 'sphere') &&
+    isPrimitive(data.type) &&
     /^#[0-9a-f]{6}$/i.test(data.color) &&
     levels.includes(data.detail) &&
     validSettings(data);
+  const validBaked = part =>
+    part?.type === 'baked' &&
+    /^#[0-9a-f]{6}$/i.test(part.color) &&
+    validSettings(part) &&
+    Array.isArray(part.vertices) && part.vertices.length >= 9 &&
+    part.vertices.length % 3 === 0 && part.vertices.every(Number.isFinite) &&
+    Array.isArray(part.normals) && part.normals.length === part.vertices.length &&
+    part.normals.every(Number.isFinite) &&
+    Array.isArray(part.uvs) && part.uvs.length === part.vertices.length / 3 * 2 &&
+    part.uvs.every(Number.isFinite) &&
+    Array.isArray(part.indices) && part.indices.length >= 3 && part.indices.length % 3 === 0 &&
+    part.indices.every(index => Number.isInteger(index) && index >= 0 && index < part.vertices.length / 3);
   const validPart = (part) =>
-    validPrimitive(part) &&
+    (validPrimitive(part) || validBaked(part)) &&
     Array.isArray(part.matrix) &&
     part.matrix.length === 16 &&
     part.matrix.every(Number.isFinite);
@@ -503,9 +602,9 @@ export function decodeProject(project) {
           data.intensity > 10000)) ||
       (data.type === 'mesh' &&
         (!Array.isArray(data.parts) ||
-          data.parts.length < 2 ||
+          (!data.parts.some(part => part?.type === 'baked') && data.parts.length < 2) ||
           !data.parts.every(validPart))) ||
-      ((data.type === 'box' || data.type === 'sphere') && !validPrimitive(data))
+      (isPrimitive(data.type) && !validPrimitive(data))
     ) {
       throw new Error('Geçersiz nesne');
     }
@@ -514,10 +613,15 @@ export function decodeProject(project) {
     data.children.forEach((child) => validate(child, depth + 1));
   }
   function decode(data) {
+    const migratedTile = source =>
+      project.version < 7 && source.finish === 'tile' && source.tileColorMode == null
+        ? { ...source, tileColorMode: 'custom' }
+        : source;
+    const settings = migratedTile(data);
     const object =
       data.type === 'mesh'
-        ? makeJoinedMesh(structuredClone(data.parts), data.name, data)
-        : makeObject(data.type, data.name, data.color, data.detail, data);
+        ? makeJoinedMesh(structuredClone(data.parts.map(migratedTile)), data.name, settings)
+        : makeObject(data.type, data.name, data.color, data.detail, settings);
     applyPose(object, data);
     object.userData.keys = structuredClone(data.keys);
     object.userData.tracks = structuredClone(data.tracks ?? {});
@@ -527,7 +631,8 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, 5, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, 6, projectVersion].includes(project?.version) ||
+    (project.name != null && (typeof project.name !== 'string' || project.name.length > 80 || !project.name.trim())) ||
     !validFrame(project.duration) ||
     project.duration < 1 ||
     !Array.isArray(project.objects)
@@ -599,6 +704,7 @@ export function decodeProject(project) {
   }
   return {
     duration: project.duration,
+    name: project.name ?? 'Yeni sahne',
     animations: structuredClone(animations),
     atmosphere: { ...atmosphere },
     defaultView: defaultView && structuredClone(defaultView),

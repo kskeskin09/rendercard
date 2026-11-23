@@ -76,6 +76,10 @@ const inspectorPositions = new WeakMap();
 let paintedInspector;
 let previewCamera = false;
 let cameraOverride;
+let freeViewLabel;
+let sceneName = 'Yeni sahne';
+let sceneExpanded = true;
+let previewStart;
 let activePicker;
 
 function status(message) {
@@ -120,7 +124,7 @@ function captureScene() {
   forObjects((object) => objects.push(object));
   return {
     project: JSON.stringify(
-      encodeProject(root, duration, animations, atmosphere)
+      encodeProject(root, duration, animations, atmosphere, undefined, sceneName)
     ),
     frame,
     selection: [...selected].map((object) => objects.indexOf(object))
@@ -129,11 +133,14 @@ function captureScene() {
 
 function replaceScene(state) {
   const project = decodeProject(JSON.parse(state.project));
+  const freeCameraId = freeViewLabel?.userData.cameraId;
   [...root.children].forEach(disposeObject);
   project.objects.forEach((object) => root.add(object));
+  freeViewLabel = freeCameraId ? getCamera(freeCameraId) : undefined;
   duration = project.duration;
   animations = project.animations;
   atmosphere = project.atmosphere;
+  sceneName = project.name;
   resetPhysics();
   frame = state.frame;
   selected.clear();
@@ -158,6 +165,7 @@ function resetPhysics() {
 function describeEdit(before, after) {
   const a = JSON.parse(before.project);
   const b = JSON.parse(after.project);
+  if (a.name !== b.name) return 'Sahnenin adını değiştir';
   if (JSON.stringify(a.atmosphere) !== JSON.stringify(b.atmosphere))
     return 'Sisi düzenle';
   if (a.duration !== b.duration) return 'Animasyon süresini değiştir';
@@ -377,7 +385,7 @@ function setMode(next) {
   all('[data-mode]').forEach((button) =>
     button.setAttribute('aria-pressed', button.dataset.mode === mode)
   );
-  view?.updateSelection(single(), mode);
+  view?.updateSelection(single(), mode, independentSelection());
 }
 
 for (const element of all('[data-icon]'))
@@ -408,10 +416,17 @@ function refreshFrame() {
 
 function setPlaying(value) {
   if (value && animations.enabled.length === 0) return;
+  if (playing && !value && previewStart === undefined) {
+    const camera = getCamera(cameraAt(animations, frame));
+    if (camera) jumpToCamera(camera);
+    else if (freeViewLabel) jumpToCamera();
+  }
   playing = value;
   $('play').innerHTML = icon(playing ? 'pause' : 'play');
   $('play').setAttribute('aria-label', playing ? 'Duraklat' : 'Oynat');
   $('play').title = playing ? 'Duraklat (Boşluk)' : 'Oynat (Boşluk)';
+  $('preview-play').innerHTML = icon(playing ? 'pause' : 'play');
+  $('preview-play').setAttribute('aria-label', playing ? 'Duraklat' : 'Oynat');
   if (playing) {
     if (frame >= duration) frameTo(0);
     startedAt = performance.now() - (frame * 1000) / fps;
@@ -546,12 +561,19 @@ function updateCameraView() {
   const preview = previewCamera || playing || recording;
   const useOverride =
     previewCamera && !playing && !recording && cameraOverride !== undefined;
-  const camera = getCamera(
-    useOverride ? cameraOverride : cameraAt(animations, frame)
-  );
-  view?.setShot(camera, preview);
+  const outputCamera = getCamera(cameraAt(animations, frame));
+  const camera = useOverride ? getCamera(cameraOverride) : outputCamera;
+  view?.setShot(camera, preview, outputCamera);
   $('viewport-camera-name').textContent =
-    preview && camera ? camera.name : 'Varsayılan';
+    preview ? (camera?.name ?? 'Varsayılan') : (freeViewLabel?.name ?? 'Varsayılan');
+}
+
+function jumpToCamera(camera) {
+  previewCamera = false;
+  cameraOverride = undefined;
+  freeViewLabel = camera;
+  $('preview-camera').setAttribute('aria-pressed', 'false');
+  view?.useCameraView(camera);
 }
 
 $('camera-choice').onchange = (event) => {
@@ -752,7 +774,7 @@ function nextClip() {
 
 const dismissMenus = (target) => {
   for (const menu of all(
-    '.clip-menu-wrap, .fog-menu-wrap, .camera-menu-wrap, .color-editor'
+    '.clip-menu-wrap, .fog-menu-wrap, .camera-menu-wrap, .color-editor, .shape-picker'
   )) {
     if (!target || !menu.contains(target)) menu.open = false;
   }
@@ -834,12 +856,22 @@ $('default-light').onclick = () =>
 function paintList() {
   const rows = [];
   let triangles = 0;
+  let objectCount = 0;
+  const alignmentAnchor = independentSelection()[0];
   function rowFor(object, depth) {
+    objectCount++;
+    if (object.isMesh) triangles += object.geometry.index.count / 3;
+    if (!sceneExpanded && !selected.has(object)) {
+      object.children.forEach(child => rowFor(child, depth + 1));
+      return;
+    }
     const type = object.userData.type;
     const row = document.createElement('button');
     row.className = 'object-row' + (selected.has(object) ? ' selected' : '');
+    if (selected.size > 1 && object === alignmentAnchor) row.classList.add('alignment-reference');
     row.setAttribute('aria-pressed', selected.has(object));
-    row.title = object.name;
+    row.title = object === alignmentAnchor && selected.size > 1
+      ? object.name + ' · Hizalama referansı' : object.name;
     row.innerHTML =
       '<span class="object-icon">' +
       icon(type) +
@@ -848,8 +880,8 @@ function paintList() {
       '</span><span class="object-badges"></span>';
     row.querySelector('.row-name').textContent = object.name;
     row.querySelector('.object-badges').innerHTML =
-      (object.userData.hidden
-        ? '<span title="Gizli" aria-label="Gizli">' + icon('eyeOff') + '</span>'
+      (object.userData.negative
+        ? '<span class="negative-badge" title="Negatif · Delik aç" aria-label="Negatif">−</span>'
         : '') +
       (object.userData.solid
         ? '<span class="solid-badge" title="Katı" aria-label="Katı">S</span>'
@@ -858,7 +890,7 @@ function paintList() {
     row.oncontextmenu = (event) => presets.openContext(event, object);
     const entry = document.createElement('div');
     entry.className = 'object-entry';
-    entry.style.paddingLeft = depth * 10 + 'px';
+    entry.style.paddingLeft = (sceneExpanded ? depth * 10 : 0) + 'px';
     const visibility = document.createElement('button');
     visibility.className = 'object-eye';
     visibility.title = object.userData.hidden ? 'Önizlemede göster' : 'Önizlemede gizle';
@@ -873,12 +905,18 @@ function paintList() {
     visibility.oncontextmenu = (event) => presets.openContext(event, object);
     entry.append(visibility, row);
     rows.push(entry);
-    if (object.isMesh) triangles += object.geometry.index.count / 3;
     object.children.forEach((child) => rowFor(child, depth + 1));
   }
   root.children.forEach((object) => rowFor(object, 0));
   $('object-list').replaceChildren(...rows);
-  $('object-count').textContent = rows.length;
+  $('object-count').textContent = objectCount;
+  const showRows = sceneExpanded || selected.size > 0;
+  $('object-list').hidden = !showRows;
+  const toggle = $('toggle-scene');
+  toggle.textContent = showRows ? '−' : '+';
+  toggle.setAttribute('aria-expanded', String(showRows));
+  toggle.title = sceneExpanded ? 'Sahne bölümünü daralt' : 'Tüm sahneyi genişlet';
+  toggle.setAttribute('aria-label', toggle.title);
   $('mesh-count').textContent = triangles.toLocaleString('tr-TR') + ' üçgen';
 }
 
@@ -1164,12 +1202,12 @@ function refresh() {
   updateSceneVisibility();
   view?.pickColor(undefined);
   paintList();
+  $('scene-name').value = sceneName;
   paintInspector();
   updateTimeline();
   setMode(mode);
   $('group').disabled = !canGroup();
-  $('join').disabled =
-    !canGroup() || ![...selected].every((object) => object.isMesh);
+  $('join').disabled = !canGroup() || ![...selected].every(object => object.isMesh);
   $('ungroup').disabled = single()?.userData.type !== 'group';
   $('delete').disabled = selected.size === 0;
   $('add-key').disabled = selected.size === 0;
@@ -1184,9 +1222,6 @@ function showPresetScene(show) {
   $('create-preset').disabled = show;
   $('save').disabled = show;
   $('open').disabled = show;
-  document.querySelector('.project span:last-child').textContent = show
-    ? 'Preset sahnesi'
-    : 'Yeni sahne';
 }
 
 presets = installPresets({
@@ -1204,6 +1239,7 @@ presets = installPresets({
     replaceScene({
       project: JSON.stringify({
         version: projectVersion,
+        name: 'Preset sahnesi',
         duration: 120,
         objects: []
       }),
@@ -1348,11 +1384,10 @@ function deleteSelection() {
       removedObjects.add(object.userData.objectId);
       if (object.isCamera) removedCameras.add(object.userData.cameraId);
     });
-  for (const keys of Object.values(animations.cameraTracks ?? {})) {
-    for (const key of keys)
-      if (removedCameras.has(key.camera)) key.camera = null;
-  }
+  for (const [clip, keys] of Object.entries(animations.cameraTracks ?? {}))
+    animations.cameraTracks[clip] = keys.filter(key => !removedCameras.has(key.camera));
   if (removedCameras.has(cameraOverride)) cameraOverride = undefined;
+  if (removedCameras.has(freeViewLabel?.userData.cameraId)) freeViewLabel = undefined;
   const parents = new Set(targets.map((object) => object.parent));
   targets.forEach(disposeObject);
   forObjects(object => {
@@ -1396,7 +1431,7 @@ for (const button of all('[data-align]')) {
     edit(() => {
       const axis = button.dataset.align;
       const targets = independentSelection();
-      const anchor = targets.pop()?.getWorldPosition(new Vector3())[axis];
+      const anchor = targets.shift()?.getWorldPosition(new Vector3())[axis];
       let blocked = false;
       for (const target of targets) {
         const from = target.position.clone();
@@ -1419,9 +1454,36 @@ for (const button of all('[data-align]')) {
     });
 }
 $('add-box').onclick = () => edit(() => addObject('box'));
-$('add-sphere').onclick = () => edit(() => addObject('sphere'));
+for (const button of all('[data-add-shape]')) {
+  button.onclick = () => {
+    button.closest('details').open = false;
+    edit(() => addObject(button.dataset.addShape));
+  };
+}
 $('add-light').onclick = () => edit(() => addObject('light'));
 $('add-camera').onclick = () => edit(() => addObject('camera'));
+$('toggle-objects').onclick = () => {
+  const tools = $('object-tools');
+  tools.hidden = !tools.hidden;
+  const button = $('toggle-objects');
+  button.textContent = tools.hidden ? '+' : '−';
+  button.setAttribute('aria-expanded', String(!tools.hidden));
+  button.setAttribute('aria-label', tools.hidden ? 'Nesneler bölümünü genişlet' : 'Nesneler bölümünü daralt');
+};
+$('toggle-scene').onclick = () => {
+  sceneExpanded = !sceneExpanded;
+  paintList();
+};
+$('scene-name').onchange = event => {
+  const input = event.currentTarget;
+  const name = input.value.trim();
+  if (name && name !== sceneName) edit(() => { sceneName = name; });
+  input.value = sceneName;
+};
+$('scene-name').onkeydown = event => {
+  if (event.key === 'Escape') event.currentTarget.value = sceneName;
+  if (event.key === 'Enter' || event.key === 'Escape') event.currentTarget.blur();
+};
 $('group').onclick = () => {
   if (!canGroup()) return;
   setPlaying(false);
@@ -1430,7 +1492,7 @@ $('group').onclick = () => {
 };
 $('join').onclick = () => {
   const objects = [...selected];
-  if (!canGroup() || !objects.every((object) => object.isMesh)) return;
+  if ($('join').disabled) return;
   if (objects.some(hasKeys)) {
     status(
       'Ağları birleştirmek için seçili nesnelerin anahtar karelerini kaldır.'
@@ -1439,10 +1501,21 @@ $('join').onclick = () => {
   }
   setPlaying(false);
   edit(() => {
-    select(joinMeshes(objects));
+    const merged = joinMeshes(objects);
+    if (!merged) {
+      status('Kesimden sonra birleşebilecek bir yüzey kalmadı.');
+      return;
+    }
+    const mergedIds = new Set(objects.map(object => object.userData.objectId));
+    forObjects(object => {
+      if (!mergedIds.has(object.userData.followTarget)) return;
+      object.userData.followTarget = merged.userData.objectId;
+      captureFollowOffset(object, merged);
+    });
+    select(merged);
     setWireframe(wireframe);
+    status('Geometri tek bir ağda birleştirildi.');
   }, 'Ağları birleştir');
-  status('Geometri tek bir ağda birleştirildi.');
 };
 $('ungroup').onclick = () => {
   const group = single();
@@ -1475,6 +1548,7 @@ $('reset-view').onclick = () => {
   setPlaying(false);
   previewCamera = false;
   cameraOverride = undefined;
+  freeViewLabel = undefined;
   $('preview-camera').setAttribute('aria-pressed', 'false');
   view?.reset();
   updateCameraView();
@@ -1491,9 +1565,7 @@ $('reset-view').oncontextmenu = (event) => {
     button.onclick = () => {
       menu.hidden = true;
       setPlaying(false);
-      previewCamera = Boolean(object);
-      cameraOverride = object?.userData.cameraId;
-      $('preview-camera').setAttribute('aria-pressed', String(previewCamera));
+      jumpToCamera(object);
       updateCameraView();
     };
     return button;
@@ -1552,6 +1624,13 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') view?.pickColor(undefined);
   shiftPressed = event.shiftKey;
   const key = event.key.toLowerCase();
+  if ($('render-preview').open) {
+    if (key === ' ' && document.activeElement?.tagName !== 'BUTTON') {
+      event.preventDefault();
+      setPlaying(!playing);
+    }
+    return;
+  }
   if (
     !recording &&
     event.ctrlKey &&
@@ -1627,7 +1706,8 @@ $('save').onclick = () => {
       viewPose && {
         position: viewPose.position.toArray(),
         target: viewPose.target.toArray()
-      }
+      },
+      sceneName
     ),
     null,
     2
@@ -1651,6 +1731,8 @@ $('project-file').onchange = async (event) => {
       duration = project.duration;
       animations = project.animations;
       atmosphere = project.atmosphere;
+      sceneName = project.name;
+      jumpToCamera();
       if (project.defaultView) view?.restoreCamera(project.defaultView);
       cameraOverride = undefined;
       sequence = undefined;
@@ -1671,6 +1753,55 @@ function showExport(show) {
   $('export').setAttribute('aria-expanded', show);
 }
 $('export').onclick = () => showExport($('export-menu').hidden);
+const preview = $('render-preview');
+const previewCanvas = $('render-preview-image');
+const previewContext = previewCanvas.getContext('2d');
+let previewPainted;
+$('watch-render').onclick = () => {
+  showExport(false);
+  if (!view || recording || preview.open) return;
+  setPlaying(false);
+  if (sequence) useClips(sequence.ids);
+  previewStart = frame;
+  previewPainted = undefined;
+  $('preview-scrub').max = duration;
+  const cutFrames = new Set(animations.enabled.flatMap(id =>
+    (animations.cameraTracks?.[id] ?? []).map(key => key.frame)));
+  const animatedFrames = new Set();
+  forObjects(object => {
+    if (!inActiveScene(object)) return;
+    for (const id of animations.enabled)
+      for (const key of keysFor(object, id)) animatedFrames.add(key.frame);
+  });
+  $('preview-cuts').replaceChildren(...[...new Set([...animatedFrames, ...cutFrames])].map(at => {
+    const mark = document.createElement('span');
+    mark.classList.toggle('preview-camera-cut', cutFrames.has(at));
+    mark.style.left = Math.min(100, at * 100 / duration) + '%';
+    return mark;
+  }));
+  preview.showModal();
+};
+$('preview-play').onclick = () => setPlaying(!playing);
+$('preview-scrub').oninput = event => stopAt(event.currentTarget.valueAsNumber);
+preview.onclose = () => {
+  setPlaying(false);
+  frameTo(previewStart ?? frame);
+  previewStart = undefined;
+  $('export').focus();
+};
+
+function paintRenderPreview() {
+  const { canvas } = view;
+  const signature = [frame, canvas.width, canvas.height].join(':');
+  if (previewPainted === signature) return;
+  previewPainted = signature;
+  previewCanvas.width = canvas.width;
+  previewCanvas.height = canvas.height;
+  view.render(true);
+  previewContext.drawImage(canvas, 0, 0);
+  $('preview-scrub').value = frame;
+  $('preview-time').textContent = frame + ' / ' + duration + ' kare';
+}
 document.addEventListener('click', (event) => {
   if (!event.target.closest('.export-wrap')) showExport(false);
 });
@@ -1704,7 +1835,7 @@ async function recordVideo() {
   recording = true;
   updateCameraView();
   const workspace = document.querySelector('.workspace');
-  const actions = document.querySelector('.top-actions');
+  const actions = document.querySelector('.topbar');
   workspace.inert = true;
   actions.inert = true;
   view.lockSize(true);
@@ -1744,9 +1875,9 @@ function populate() {
   const platform = makeObject('box', 'Kaide', '#596c61');
   platform.position.set(0, 0.17, 0);
   platform.scale.set(4.65, 0.34, 3.25);
-  const sphere = makeObject('sphere', 'Küre', '#d5f47c', 48);
-  sphere.position.set(-0.77, 1.15, 0.24);
-  sphere.scale.setScalar(1.62);
+  const prism = makeObject('prism', 'Üçgen prizma', '#d5f47c');
+  prism.position.set(-0.77, 1.15, 0.24);
+  prism.scale.setScalar(1.62);
   const box = makeObject('box', 'Kutu', '#ad9de0');
   box.position.set(0.95, 0.96, -0.28);
   box.scale.set(1.17, 1.24, 1.12);
@@ -1757,7 +1888,7 @@ function populate() {
   writeKey(box, 60);
   poseAt(box, 0);
   writeKey(box, 120);
-  root.add(sphere, box, platform);
+  root.add(prism, box, platform);
   selected.add(box);
 }
 
@@ -1912,12 +2043,15 @@ function animate(now) {
     const next = Math.floor(((now - startedAt) * fps) / 1000);
     const end = sequence?.end ?? duration;
     if (next >= end) {
-      setPlaying(false);
       frameTo(end, true);
+      setPlaying(false);
       if (sequence) nextClip();
     } else if (next !== frame) frameTo(next, true);
   }
-  if (!recording) view?.render();
+  if (!recording && view) {
+    if (preview.open) paintRenderPreview();
+    else view.render();
+  }
   window.requestAnimationFrame(animate);
 }
 window.requestAnimationFrame(animate);

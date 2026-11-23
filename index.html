@@ -18,7 +18,8 @@
         ><span>rendercard<span class="brand-period">.</span></span>
       </div>
       <div class="project">
-        <span data-icon="folder"></span> <span>Yeni sahne</span>
+        <span data-icon="folder"></span>
+        <input id="scene-name" aria-label="Sahne adı" value="Yeni sahne" maxlength="80" />
       </div>
       <div class="top-actions">
         <div class="history-actions" aria-label="Düzenleme geçmişi">
@@ -62,6 +63,7 @@
             <span data-icon="chevron"></span>
           </button>
           <div id="export-menu" class="menu" hidden>
+            <button id="watch-render"><span data-icon="play"></span> Önizleme izle</button>
             <button id="png">
               <span data-icon="image"></span> Görsel indir (PNG)</button
             ><button id="video">
@@ -86,13 +88,17 @@
               </button>
             </div>
           </div>
+          <button id="toggle-objects" class="panel-toggle quiet" aria-controls="object-tools" aria-expanded="true" aria-label="Nesneler bölümünü daralt">−</button>
         </div>
-        <div class="shape-grid">
+        <div id="object-tools" class="shape-grid">
           <button id="add-box" class="shape">
             <span class="shape-art box-art" data-icon="box"></span>Kutu</button
-          ><button id="add-sphere" class="shape">
-            <span class="shape-art sphere-art" data-icon="sphere"></span>Küre
-          </button>
+          >
+          <details class="shape-picker">
+            <summary class="shape"><span class="shape-art sphere-art" data-icon="prism"></span> Şekiller <span data-icon="chevron"></span></summary>
+            <button class="shape" data-add-shape="prism"><span data-icon="prism"></span> Üçgen prizma</button>
+            <button class="shape" data-add-shape="pyramid"><span data-icon="pyramid"></span> Piramit</button>
+          </details>
           <button
             id="add-light"
             class="shape"
@@ -115,6 +121,7 @@
           <div class="panel-heading">
             <h2>Sahne</h2>
             <span id="object-count" class="count"></span>
+            <button id="toggle-scene" class="panel-toggle quiet" aria-controls="object-list" aria-expanded="true" aria-label="Sahne bölümünü daralt">−</button>
           </div>
           <div
             id="object-list"
@@ -457,6 +464,21 @@
       <button id="context-delete">Sil</button>
     </div>
     <div id="view-camera-menu" class="menu object-menu" hidden></div>
+    <dialog id="render-preview" aria-labelledby="render-preview-title">
+      <div class="render-preview-heading">
+        <h2 id="render-preview-title">Render önizlemesi</h2>
+        <form method="dialog"><button id="close-render-preview" class="quiet">Kapat</button></form>
+      </div>
+      <canvas id="render-preview-image" aria-label="Render görüntüsü"></canvas>
+      <div class="render-preview-controls">
+        <button id="preview-play" class="quiet" aria-label="Oynat"><span data-icon="play"></span></button>
+        <div class="render-preview-track">
+          <div id="preview-cuts" aria-hidden="true"></div>
+          <input id="preview-scrub" type="range" min="0" max="120" value="0" aria-label="Render önizlemesi zaman çizelgesi" />
+        </div>
+        <output id="preview-time"></output>
+      </div>
+    </dialog>
     <dialog id="preset-dialog" aria-labelledby="preset-title">
       <form id="preset-form">
         <h2 id="preset-title">Preset olarak kaydet</h2>

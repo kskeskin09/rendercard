@@ -1,6 +1,6 @@
 {
   "name": "rendercard",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "description": "Türkçe 3B sahne, render ve animasyon editörü",
@@ -20,7 +20,9 @@
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.21.0",
     "mediabunny": "1.66.2",
-    "three": "0.183.2"
+    "three": "0.183.2",
+    "three-bvh-csg": "0.0.18",
+    "three-mesh-bvh": "0.9.7"
   },
   "devDependencies": {
     "electron": "45.4.1",

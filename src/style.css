@@ -1366,3 +1366,63 @@ textarea,
 #follow-distance { display: block; color: var(--muted); margin: 6px 0; font-size: 11px; }
 #follow-rebase { min-height: 25px; font-size: 11px; }
 #view-camera-menu { min-width: 126px; max-height: 240px; overflow-y: auto; }
+
+#scene-name {
+  width: clamp(6rem, 19vw, 15rem);
+  min-width: 0;
+  padding: 5px 8px;
+  font: inherit;
+}
+.panel-toggle {
+  flex: 0 0 26px;
+  min-width: 26px;
+  min-height: 25px;
+  padding: 0;
+  font-size: 15px;
+}
+.sidebar .panel-heading { gap: 4px; }
+.sidebar .panel-heading h2 { flex: 1; }
+.sidebar .panel-heading .preset-wrap > button { padding-inline: 4px; }
+.shape-picker { min-width: 0; }
+.shape-picker > summary {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  cursor: pointer;
+  list-style: none;
+  padding-inline: 8px;
+}
+.shape-picker > summary > :last-child { margin-left: auto; }
+.shape-picker > button { margin: 4px 0 0 7px; width: calc(100% - 7px); }
+.object-row.alignment-reference { background: #cddfaf; color: #27351a; }
+.negative-badge { font-weight: 800; color: #754aa2; }
+#render-preview {
+  width: min(1120px, calc(100vw - 2rem));
+  max-width: none;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f7f9f2;
+  color: #202517;
+}
+#render-preview::backdrop { background: #1c241ac9; }
+#render-preview-image { display: block; width: 100%; max-height: 72vh; object-fit: contain; background: #19201a; }
+.render-preview-heading, .render-preview-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.render-preview-heading { margin-bottom: 10px; }
+.render-preview-controls { margin-top: 10px; }
+.render-preview-controls output { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.render-preview-track { flex: 1; position: relative; min-width: 0; }
+#preview-scrub { display: block; width: 100%; margin: 0; accent-color: #78972f; }
+#preview-cuts { position: absolute; inset: auto 6px -5px; height: 5px; pointer-events: none; }
+#preview-cuts span { position: absolute; width: 3px; height: 5px; border-radius: 2px; background: #778a6e; }
+#preview-cuts .preview-camera-cut { background: #865ab0; }
+@media (max-width: 720px) {
+  .topbar { flex-wrap: wrap; }
+  .topbar .project { display: flex; flex-basis: 100%; order: 1; }
+  #scene-name { width: min(70vw, 16rem); }
+}
