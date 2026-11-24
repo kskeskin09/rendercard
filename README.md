@@ -33,7 +33,7 @@ Animasyon 30 FPS olarak WebM veya MP4 biçiminde yazılır. Tarayıcı sürümü
 
 `X` sağ, `Y` üst, `Z` ön görünümü açar. Sağ üstteki eksen düğmeleri de aynı işlemi yapar. Bu görünümlerde perspektif kısalması yoktur. Aynı ekseni tekrar seçmek serbest görünüme döner. Eksen görünümü, render kamerasını değiştirmez.
 
-**Mesafe ölç** düğmesini veya `M` tuşunu kullanın. İlk noktadan sonra çizgi ve mesafe imleci takip eder. İkinci tık ölçümü sabitler, üçüncü tık yeni ölçüm başlatır. **Tam konumlar** noktaları belirlediğiniz aralığa, **Yüzeye yakala** ise yakın kenar ve köşelere oturtur. `Esc` ölçümü kapatır.
+**Mesafe ölç** düğmesini veya `M` tuşunu kullanın. İlk noktadan sonra çizgi ve mesafe imleci takip eder. İkinci tık ölçümü sabitler, üçüncü tık yeni ölçüm başlatır. Sağ tık noktaları temizler ve aracı açık tutar. **Tam konumlar** noktaları belirlediğiniz aralığa, **Yüzeye yakala** ise yakın kenar ve köşelere oturtur. `Esc` ölçümü kapatır.
 
 Kaydedilmemiş proje değişiklikleri varsa Windows uygulaması çıkarken onay ister. PNG ve video dışa aktarımı proje kaydı sayılmaz.
 

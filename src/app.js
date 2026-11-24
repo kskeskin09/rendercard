@@ -3169,7 +3169,7 @@ try {
     rigPick: receiveRigPick,
     select,
     measurementSettings: () => ({ step: dimensionStep(), surface: $('snap-surface').checked }),
-    measured: result => status(result
+    measured: result => status(result === null ? 'Ölçüm temizlendi. İlk noktayı seç.' : result
       ? 'Mesafe ' + result + ' · Yeni ölçüm için bir noktaya tıkla.'
       : 'İkinci noktayı seç. Mesafe imleci takip eder.'),
     context: (event, object) => presets.openContext(event, object),

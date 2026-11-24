@@ -119,6 +119,14 @@ export function createMeasurement(root, scene, canvas, label, settings) {
   let preview;
   let dirty = false;
   function invalidate() { dirty = true; }
+  function reset() {
+    const hadPoint = Boolean(first);
+    first = second = position = preview = undefined;
+    dirty = false;
+    guide.visible = false;
+    label.hidden = true;
+    return hadPoint;
+  }
   function pick(camera, target) {
     const rect = canvas.getBoundingClientRect();
     cursor.set((2 * (position[0] - rect.left)) / rect.width - 1,
@@ -129,11 +137,10 @@ export function createMeasurement(root, scene, canvas, label, settings) {
     get active() { return active; },
     setActive(value) {
       active = value;
-      first = second = position = preview = undefined;
-      guide.visible = false;
-      label.hidden = true;
+      reset();
       canvas.classList.toggle('measuring', active);
     },
+    reset,
     invalidate,
     move(x, y) {
       position = x == null ? undefined : [x, y];

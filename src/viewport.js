@@ -526,6 +526,10 @@ export function createViewport(
     );
     down = undefined;
     if (distance > 4) return;
+    if (event.button === 2 && measurement.active && measurement.reset()) {
+      measured(null);
+      return;
+    }
     pointRay(event);
     if (rig.enabled && rigPick?.(event, rig.pick(ray, event.button))) return;
     const light =
