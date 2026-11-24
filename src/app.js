@@ -1955,6 +1955,10 @@ function addObject(type) {
   );
   if (object.isMesh) object.material.wireframe = wireframe;
   addToActiveScene(object);
+  if (type === 'triangle') {
+    object.scale.z = 0.2;
+    groundObject(object);
+  }
   updateSceneVisibility();
   collisions?.separate(root, object);
   if (settleObject(object) === false) return false;
@@ -2376,6 +2380,7 @@ for (const button of all('[data-align]')) {
 }
 $('add-box').onclick = () => edit(() => addObject('box'));
 $('add-pyramid').onclick = () => edit(() => addObject('pyramid'));
+$('add-triangle').onclick = () => edit(() => addObject('triangle'));
 $('add-light').onclick = () => edit(() => addObject('light'));
 $('add-camera').onclick = () => edit(() => addObject('camera'));
 $('toggle-objects').onclick = () => {

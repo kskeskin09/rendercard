@@ -39,6 +39,7 @@ Kaydedilmemiş proje değişiklikleri varsa Windows uygulaması çıkarken onay 
 
 ## Şekil ve yerleşim
 
+- **Üçgen**, kalınlığı Z boyutuyla ayarlanabilen bir şekildir. **Geometri** bölümünde A ve B iç açılarını girin. C açısı, toplam 180° olacak şekilde hesaplanır. **Dönüşüm** bölümünden konumu, dönüşü ve boyutu ayarlayın. X ve Y farklı oranlarda uzatılırsa üçgenin görünen açıları değişir.
 - **Shift** ile birden çok nesne seçip seçimdeki bir nesneye sağ tıklayın. **Grupla**, aynı düzeydeki nesnelere ortak bir grup ekler. **Hiyerarşi kur**, ilk seçilen cismi üst nesne yapar. Alt nesneler üst nesnenin dönüşümünü izler. Aynı hiyerarşide örtüşen yüzeylerde üstteki nesne görünür. **Üst nesneden ayır**, alt nesneyi mevcut pozuyla bir üst düzeye çıkarır.
 - **3B Metin** ile sahneye yazı ekleyin ve ekleme penceresinde kalınlık ile kenar yumuşatmayı ayarlayın. Her ekleme ayrı grup oluşturur. Sahne listesindeki **+** ve **−** grubun harflerini açar veya kapatır. Harfi seçip **Geometri** bölümünden kalınlığını ve yumuşatmasını yeniden ayarlayabilirsiniz. Konum, dönüş ve boyut için grubun veya tek harfin karelerini oluşturabilirsiniz.
 - Metin grubuna sağ tıklayıp **Metni düzenle** ile yazıyı değiştirin. Eşleşen harflerin ayarları ve kareleri korunur. Kaldırılan harfin animasyonu varsa onay istenir. **Harfleri sırayla canlandır** seçeneğiyle yükselme, dönüş veya büyüme kareleri oluşturun. Başlangıç karesini, harfler arasındaki gecikmeyi ve her harfin hareket süresini belirleyebilirsiniz.

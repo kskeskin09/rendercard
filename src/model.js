@@ -45,6 +45,7 @@ import { releaseCut, sceneCuts } from './boolean-cuts.js';
 import { skyTiles } from './sky-texture.js';
 import { defaultOrbit, orbitPlanes } from './orbit-motion.js';
 import { defaultLetterDepth, isLetter, letterGeometry, letterLayout, maximumLetterRadius } from './text-geometry.js';
+import { defaultTriangleAngles, triangleGeometry, validTriangleAngles } from './triangle-geometry.js';
 
 export const defaultAtmosphere = {
   defaultLight: false,
@@ -61,6 +62,7 @@ export const types = {
   box: 'Kutu',
   sphere: 'Küre',
   prism: 'Üçgen prizma',
+  triangle: 'Üçgen',
   pyramid: 'Piramit',
   group: 'Grup',
   letter: 'Harf',
@@ -69,9 +71,9 @@ export const types = {
   camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 17;
+export const projectVersion = 18;
 export const shapeSides = [3, 4, 5, 6, 8, 16, 32, 64];
-export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid'].includes(type);
+export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid', 'triangle'].includes(type);
 const channels = ['position', 'rotation', 'scale'];
 
 const settingsDefaults = {
@@ -84,6 +86,7 @@ const settingsDefaults = {
   negative: false,
   sides: null,
   polygonRoundness: 0,
+  triangleAngles: null,
   reactsToGround: true,
   linkedSize: false,
   mergeMidpoint: false,
@@ -142,6 +145,7 @@ export function geometry(type, detail = 24, settings = settingsDefaults) {
   const equalRadii = radii && radii.every((value) => value === radii[0]);
   const uniformRadius = equalRadii ? radii[0] : settings.radius;
   if (type === 'letter') result = letterGeometry(settings.glyph, settings.letterDepth, settings.radius);
+  else if (type === 'triangle') result = triangleGeometry(settings.triangleAngles ?? defaultTriangleAngles);
   else if (type === 'sphere') result = new SphereGeometry(0.5, detail, detail / 2);
   else if (type === 'prism' || type === 'pyramid' || (type === 'box' && (settings.sides ?? 4) !== 4)) {
     const sides = settings.sides ?? (type === 'prism' ? 3 : 4);
@@ -276,6 +280,7 @@ export function makeObject(
   data
 ) {
   const settings = settingsOf(data);
+  if (type === 'triangle') settings.triangleAngles ??= [...defaultTriangleAngles];
   if (type === 'letter') {
     settings.glyph = data.glyph;
     settings.letterDepth = data.letterDepth ?? defaultLetterDepth;
@@ -631,6 +636,7 @@ export function decodeProject(project) {
     (data.mergeMidpoint == null || typeof data.mergeMidpoint === 'boolean') &&
     (data.polygonRoundness == null || (Number.isFinite(data.polygonRoundness) && data.polygonRoundness >= 0 && data.polygonRoundness <= 0.5)) &&
     (data.sides == null || shapeSides.includes(data.sides)) &&
+    (data.triangleAngles == null || validTriangleAngles(data.triangleAngles)) &&
     (data.tileFit == null || typeof data.tileFit === 'boolean') &&
     (data.tileColorMode == null || ['default', 'custom'].includes(data.tileColorMode)) &&
     (data.radius == null ||
@@ -817,7 +823,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, projectVersion].includes(project?.version) ||
     (project.renderSize != null && !validRenderSize(project.renderSize)) ||
     (project.name != null && (typeof project.name !== 'string' || project.name.length > 80 || !project.name.trim())) ||
     !validFrame(project.duration) ||

@@ -44,6 +44,38 @@ const close = (actual, expected) =>
   assert(Math.abs(actual - expected) < 0.0001, `${actual} != ${expected}`);
 const bounds = (object) => new Box3().setFromObject(object, true);
 
+test('triangle geometry keeps its entered angles and survives saving and joining', () => {
+  const root = new Group();
+  const triangle = makeObject('triangle');
+  root.add(triangle);
+  triangle.userData.triangleAngles = [120, 25];
+  setDetail(triangle, 24);
+  const { position } = triangle.geometry.attributes;
+  const corners = new Map();
+  for (let i = 0; i < position.count; i++) {
+    const point = new Vector3().fromBufferAttribute(position, i);
+    if (point.z > 0) corners.set([point.x, point.y].join(','), point);
+  }
+  assert.equal(corners.size, 3);
+  const ordered = [...corners.values()].sort((a, b) => a.y - b.y || a.x - b.x);
+  ordered.forEach((point, index) => {
+    const vectors = ordered.filter(other => other !== point).map(other => other.clone().sub(point));
+    close(vectors[0].angleTo(vectors[1]) * 180 / Math.PI, [120, 25, 35][index]);
+  });
+  assert.equal(triangle.geometry.index.count, 24);
+  const project = encodeProject(root, 120);
+  const [saved] = decodeProject(project).objects;
+  assert.deepEqual(saved.userData.triangleAngles, [120, 25]);
+  project.objects[0].triangleAngles = [120, 60];
+  assert.throws(() => decodeProject(project), /Geçersiz nesne/);
+  const box = makeObject('box');
+  box.position.x = 2;
+  root.add(box);
+  const merged = joinMeshes([triangle, box]);
+  assert.deepEqual(decodeProject(encodeProject(root, 120)).objects[0].userData.parts[0].triangleAngles, [120, 25]);
+  assert.equal(merged.geometry.index.count, 60);
+});
+
 test('one-sided scale keeps the opposite edge and Shift keeps both changes equal', () => {
   const box = makeObject('box');
   changePivot(box, 'x', 1);

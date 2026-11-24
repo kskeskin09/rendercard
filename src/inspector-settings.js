@@ -7,6 +7,7 @@ import { speedMarkup, bindSpeed } from './speed-graph.js';
 import { axes, axisHeading, axisRow } from './inspector-grid.js';
 import { orbitPlanes } from './orbit-motion.js';
 import { maximumLetterRadius } from './text-geometry.js';
+import { minimumTriangleAngle, remainingTriangleAngle, validTriangleAngles } from './triangle-geometry.js';
 
 const choices = [
   ['Sol', 'Orta', 'Sağ'],
@@ -131,6 +132,13 @@ export function settingsMarkup(object) {
         '</div></div>' +
         '<label class="field" title="Yuvarlatılmış köşeleri oluşturan yüzey sayısı. Değer arttıkça köşe daha pürüzsüz görünür.">Köşe ayrıntısı<input id="object-segments" type="number" min="1" max="12" step="1"></label></div>' : '') +
         '</div>'
+      : '') +
+    (type === 'triangle'
+      ? '<div class="inspector-block"><h3>Geometri</h3>' +
+        '<div class="field" title="Üçgenin ön yüzündeki başlangıç açıları. X ve Y farklı oranlarda boyutlandırılırsa görünen açılar da değişir.">İç açılar (°)<div class="axis-fields">' +
+        '<label><b>A</b><input id="triangle-angle-a" aria-label="İç açı A" type="number" min="1" step="any"></label>' +
+        '<label><b>B</b><input id="triangle-angle-b" aria-label="İç açı B" type="number" min="1" step="any"></label>' +
+        '<label><b>C</b><input id="triangle-angle-c" aria-label="Hesaplanan iç açı C" type="number" readonly title="180° eksi A ve B"></label></div></div></div>'
       : '') +
     (type === 'sphere'
       ? '<div class="inspector-block"><h3>Geometri</h3><label class="field">Yüzey ayrıntısı<select id="object-detail">' +
@@ -402,6 +410,31 @@ export function bindSettings(
   function rebuild(detail = data.detail) {
     setDetail(object, detail);
     return changed(object);
+  }
+  if ($('triangle-angle-a')) {
+    const inputs = [$('triangle-angle-a'), $('triangle-angle-b')];
+    const remaining = $('triangle-angle-c');
+    const paintAngles = () => {
+      const values = data.triangleAngles;
+      inputs.forEach((input, index) => {
+        input.value = values[index];
+        input.max = 180 - minimumTriangleAngle - values[1 - index];
+      });
+      remaining.value = Number(remainingTriangleAngle(values).toFixed(8));
+    };
+    inputs.forEach((input, index) => {
+      input.onchange = () => {
+        const angles = [...data.triangleAngles];
+        angles[index] = input.valueAsNumber;
+        if (validTriangleAngles(angles)) edit(() => {
+          data.triangleAngles = angles;
+          return rebuild();
+        }, 'Üçgenin iç açısını değiştir');
+        else status('Üçgenin her iç açısı en az 1° olmalı.');
+        paintAngles();
+      };
+    });
+    paintAngles();
   }
   if ($('letter-depth')) {
     number('letter-depth', () => data.letterDepth, 0.01, 5, value => {
