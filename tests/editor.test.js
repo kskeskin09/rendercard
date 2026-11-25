@@ -44,6 +44,42 @@ const close = (actual, expected) =>
   assert(Math.abs(actual - expected) < 0.0001, `${actual} != ${expected}`);
 const bounds = (object) => new Box3().setFromObject(object, true);
 
+test('Godot export builds separate scaled colliders for solid meshes including invisible obstacles', async () => {
+  const { snapshotModel, disposeModel } = await import('../src/model-export.js');
+  const root = new Group();
+  const solid = makeObject('group', 'Duvar');
+  solid.userData.solid = true;
+  solid.position.set(2, 1, 0);
+  solid.scale.set(2, 3, 1);
+  const visible = makeObject('box', 'Taş-col');
+  const invisible = makeObject('box', 'Cam', undefined, undefined, { opacity: 0 });
+  invisible.position.x = 3;
+  const cutter = makeObject('box', 'Kesici', undefined, undefined, { negative: true });
+  cutter.position.x = 10;
+  solid.add(visible, invisible, cutter);
+  const decoration = makeObject('box', 'Dekor');
+  root.add(solid, decoration);
+  const output = snapshotModel(root, root.children, 1, 'static');
+  const colliders = output.scene.getObjectByName('Rendercard_Collisions').children;
+  assert.deepEqual(colliders.map(item => item.name), ['Taş_Collision_1-colonly', 'Cam_Collision_2-colonly']);
+  assert(output.scene.getObjectByName('Taş')?.isMesh);
+  assert(!output.scene.getObjectByName('Cam'));
+  assert.deepEqual(colliders[0].scale.toArray(), [1, 1, 1]);
+  assert.deepEqual(bounds(colliders[0]).getSize(new Vector3()).toArray(), [2, 3, 1]);
+  assert.deepEqual(colliders[1].position.toArray(), [8, 1, 0]);
+  assert.equal(visible.name, 'Taş-col');
+  disposeModel(output.scene);
+
+  const selection = snapshotModel(root, [invisible], 1, 'convex');
+  assert.deepEqual(selection.scene.getObjectByName('Rendercard_Collisions').children.map(item => item.name),
+    ['Cam_Collision_1-convcolonly']);
+  disposeModel(selection.scene);
+  const standard = snapshotModel(root, [visible], 1);
+  assert(standard.scene.getObjectByName('Taş-col'));
+  assert(!standard.scene.getObjectByName('Rendercard_Collisions'));
+  disposeModel(standard.scene);
+});
+
 test('triangle geometry keeps its entered angles and survives saving and joining', () => {
   const root = new Group();
   const triangle = makeObject('triangle');

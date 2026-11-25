@@ -3,6 +3,7 @@ import {
   QuaternionKeyframeTrack, VectorKeyframeTrack
 } from 'three';
 import { sceneCuts } from './boolean-cuts.js';
+import { collisionExportName, createCollisionExport } from './godot-collision-export.js';
 
 function materialsFor(object) {
   const source = Array.isArray(object.material) ? object.material : [object.material];
@@ -94,7 +95,7 @@ function exportGeometry(object, source, materials) {
     .setIndex(indices);
 }
 
-export function snapshotModel(root, selection, aspect) {
+export function snapshotModel(root, selection, aspect, collisionMode = 'none') {
   const scene = new Scene();
   const included = new Set();
   const ancestors = new Set();
@@ -105,11 +106,14 @@ export function snapshotModel(root, selection, aspect) {
     for (let node = item.parent; node && node !== root; node = node.parent) ancestors.add(node);
   }
   root.updateWorldMatrix(true, true);
+  const collision = collisionMode === 'none' ? null :
+    createCollisionExport(collisionMode, sceneCuts(root, undefined, false).cuts);
   const { cuts, cutters } = sceneCuts(root);
   function build(object, parent) {
     if ((!included.has(object) && !ancestors.has(object)) || object.clipActive === false) return;
     let copy;
     if (included.has(object)) {
+      collision?.add(object);
       if (object.isMesh && !cutters.has(object)) {
         const materials = materialsFor(object);
         const geometry = exportGeometry(object, cuts.get(object) ?? object.geometry, materials);
@@ -134,7 +138,7 @@ export function snapshotModel(root, selection, aspect) {
     }
     if (!copy && (object.isGroup || object.children.length || ancestors.has(object))) copy = new Group();
     if (!copy) return;
-    copy.name = object.name;
+    copy.name = collision ? collisionExportName(object.name) : object.name;
     copy.position.copy(object.position);
     copy.quaternion.copy(object.quaternion);
     copy.scale.copy(object.scale);
@@ -143,6 +147,7 @@ export function snapshotModel(root, selection, aspect) {
     object.children.forEach(child => build(child, copy));
   }
   root.children.forEach(object => build(object, scene));
+  if (collision?.group.children.length) scene.add(collision.group);
   return { scene, pairs, meshes };
 }
 
@@ -179,11 +184,14 @@ export function sampleTracks(pairs, fps) {
 }
 
 export function disposeModel(scene) {
+  const disposed = new Set();
   scene.traverse(object => {
     if (object.isLight) object.dispose();
     if (!object.isMesh) return;
     object.geometry.dispose();
     for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      if (disposed.has(material)) continue;
+      disposed.add(material);
       material.map?.dispose();
       material.dispose();
     }

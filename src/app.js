@@ -3022,15 +3022,24 @@ const modelDialog = $('model-dialog');
 const modelHelp = {
   glb: 'Geometri, renk, dokular ve animasyonlar tek dosyada. Kamera geçişleri ve canlı kesimler aktarılmaz.',
   gltf: 'Düzenlenebilir JSON. Geometri, dokular ve animasyonlar dosyaya gömülür. Kamera geçişleri ve canlı kesimler aktarılmaz.',
-  obj: 'Geçerli karenin geometrisi aktarılır. Animasyon ve malzeme aktarılmaz.',
+  obj: 'Geçerli karenin geometrisi aktarılır. Godot çarpışması için GLB veya glTF seç.',
   stl: 'Geçerli karenin üçgen yüzeyleri aktarılır. Animasyon ve malzeme aktarılmaz.'
+};
+const collisionHelp = {
+  static: 'Katı nesnelerden bu kareye ait sabit çarpışma şekilleri oluşturur. Duvar ve zemin için uygundur.',
+  convex: 'Katı nesnelerden dışbükey şekiller oluşturur. Hareketli bir araç için şekilleri Godot’ta fizik gövdesine bağla.',
+  none: ''
 };
 function paintModelOptions() {
   const format = $('model-format').value;
-  $('model-animations-field').hidden = format !== 'glb' && format !== 'gltf';
+  const sceneFormat = format === 'glb' || format === 'gltf';
+  $('model-animations-field').hidden = !sceneFormat;
+  $('model-collision-field').hidden = !sceneFormat;
+  $('model-collision-help').textContent = collisionHelp[$('model-collision').value];
+  $('model-collision-help').hidden = $('model-collision').value === 'none';
   $('model-format-help').textContent = modelHelp[format];
 }
-$('model-format').onchange = paintModelOptions;
+$('model-format').onchange = $('model-collision').onchange = paintModelOptions;
 $('export-model').onclick = () => {
   showExport(false);
   if (recording) return;
@@ -3046,11 +3055,12 @@ $('model-form').onsubmit = event => {
   modelDialog.close();
   const format = $('model-format').value;
   const targets = $('model-scope').value === 'selection' ? independentSelection() : root.children.slice();
-  const animated = (format === 'glb' || format === 'gltf') && $('model-animations').checked;
-  void exportModel(format, targets, animated);
+  const sceneFormat = format === 'glb' || format === 'gltf';
+  const animated = sceneFormat && $('model-animations').checked;
+  void exportModel(format, targets, animated, sceneFormat ? $('model-collision').value : 'none');
 };
 
-async function exportModel(format, targets, animated) {
+async function exportModel(format, targets, animated, collisionMode) {
   if (recording) return;
   setPlaying(false);
   const oldFrame = frame;
@@ -3072,7 +3082,7 @@ async function exportModel(format, targets, animated) {
     exporter = await import('./model-export.js');
     animations.enabled = includedClips;
     updateSceneVisibility();
-    snapshot = exporter.snapshotModel(root, targets, renderSize.width / renderSize.height);
+    snapshot = exporter.snapshotModel(root, targets, renderSize.width / renderSize.height, collisionMode);
     const geometryOnly = format === 'obj' || format === 'stl';
     if (geometryOnly ? !snapshot.meshes : !snapshot.scene.children.length) {
       status('Bu kapsamda dışa aktarılacak ' + (geometryOnly ? 'geometri' : 'nesne') + ' yok.');

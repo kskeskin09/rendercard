@@ -14,6 +14,12 @@ export function relatedHierarchy(a, b) {
   return root != null && root === hierarchyRoot(b);
 }
 
+export function solidInHierarchy(object) {
+  for (let node = object; node; node = node.parent)
+    if (node.userData.solid) return true;
+  return false;
+}
+
 export function reparentPlans(objects, parent) {
   parent.updateWorldMatrix(true, false);
   const inverse = new Matrix4().copy(parent.matrixWorld).invert();

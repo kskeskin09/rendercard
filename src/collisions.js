@@ -6,7 +6,7 @@ import { slideMovement } from './camera-follow.js';
 import { translateWorld } from './spatial.js';
 import { sceneCuts } from './boolean-cuts.js';
 import { elasticFits } from './elastic.js';
-import { relatedHierarchy } from './hierarchy.js';
+import { relatedHierarchy, solidInHierarchy } from './hierarchy.js';
 
 const tolerance = 0.00001;
 const stationary = new Vector3();
@@ -22,12 +22,6 @@ export async function initializeCollisions() {
     console.error('Katılık başlatılamadı.', error);
   }
   return ready;
-}
-
-function solidInHierarchy(object) {
-  for (let node = object; node; node = node.parent)
-    if (node.userData.solid) return true;
-  return false;
 }
 
 function shapeFor(buffer, matrix, settings, cut = false) {

@@ -99,6 +99,8 @@ Sahne araçlarındaki **Birleştir** düğmesi, birbirine değmeyen nesneleri de
 
 ## Kayıt ve model içe aktarma
 
+**Render al → 3B model dışa aktar → Godot çarpışması** GLB veya glTF dosyasına katı nesneler için ayrı çarpışma geometrisi ekler. Godot sahne içe aktarmasında düğüm adı son ekleri etkin olmalıdır. Yüzde 0 opaklıktaki katı nesneler görünmez engel olarak kullanılabilir. Sabit çevre şekilleri seçilen karedeki konumda kalır. Araç gibi hareketli bir model için dışbükey şekilleri seçip Godot’ta aracın fizik gövdesine bağlayın. Karakterin çarpışma maskesi engelin katmanını içermelidir.
+
 Windows uygulamasında **Kaydet** veya `Ctrl+S` ilk kullanımda bir dosya seçtirir. Açılan veya kaydedilen projede sonraki kayıt aynı dosyayı günceller. **Farklı Kaydet** veya `Ctrl+Shift+S` ile yeni bir hedef seçebilirsiniz.
 
 **Model içe aktar** ile GLB veya OBJ ekleyebilirsiniz. OBJ malzemeleri için OBJ, MTL ve doku dosyalarını birlikte seçin. Model tek bir düzenlenebilir ağ olarak eklenir. Desteklenen malzemeler ve temel renk dokuları projeye gömülür. Dosyadaki hazır animasyonlar, iskelet ve özel malzeme efektleri bu aşamada aktarılmaz.

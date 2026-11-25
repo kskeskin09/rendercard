@@ -630,6 +630,14 @@
           <option value="scene">Sahnedeki nesneler</option><option value="selection">Seçili nesneler</option>
         </select></label>
         <label id="model-animations-field" class="check-field"><input id="model-animations" type="checkbox" checked> Etkin animasyonları ekle</label>
+        <div id="model-collision-field">
+          <label class="field">Godot çarpışması<select id="model-collision">
+            <option value="static">Sabit çevre · Üçgen ağ</option>
+            <option value="convex">Hareketli gövde için · Dışbükey</option>
+            <option value="none">Kapalı</option>
+          </select></label>
+          <p id="model-collision-help" class="selection-tip"></p>
+        </div>
         <p id="model-format-help" class="selection-tip"></p>
         <div class="dialog-actions"><button id="close-model-dialog" type="button" class="quiet">Vazgeç</button><button type="submit" class="primary">Dışa aktar</button></div>
       </form>
