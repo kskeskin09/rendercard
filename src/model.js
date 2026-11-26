@@ -71,7 +71,7 @@ export const types = {
   camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 19;
+export const projectVersion = 20;
 export const shapeSides = [3, 4, 5, 6, 8, 16, 32, 64];
 export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid', 'triangle'].includes(type);
 const channels = ['position', 'rotation', 'scale'];
@@ -94,6 +94,7 @@ const settingsDefaults = {
   objectId: null,
   affectsSolids: true,
   followTarget: null,
+  focusTarget: null,
   followOffset: null,
   opacity: 100,
   hidden: false,
@@ -758,6 +759,7 @@ export function decodeProject(project) {
       (data.bones != null && (!Array.isArray(data.bones) || !data.bones.every(validBone))) ||
       (data.objectId != null && (!validObjectId(data.objectId) || objectIds.has(data.objectId))) ||
       (data.followTarget != null && !validObjectId(data.followTarget)) ||
+      (data.focusTarget != null && !validObjectId(data.focusTarget)) ||
       !validKeys(data.keys) ||
       !Array.isArray(data.children) ||
       (data.tracks != null &&
@@ -824,7 +826,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, projectVersion].includes(project?.version) ||
     (project.renderSize != null && !validRenderSize(project.renderSize)) ||
     (project.name != null && (typeof project.name !== 'string' || project.name.length > 80 || !project.name.trim())) ||
     !validFrame(project.duration) ||

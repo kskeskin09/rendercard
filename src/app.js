@@ -46,6 +46,7 @@ import { applyTextEdit, isTextGroup, planLetterEntrance, planTextEdit, textGroup
 import { applyKeyTiming, planKeyTiming } from './key-timing.js';
 import { boneDefaults, rigLinks } from './rig.js';
 import { tiles } from './tiles.js';
+import { aimCameraAt } from './camera-follow.js';
 import { applyReparenting, reparentPlans } from './hierarchy.js';
 import {
   axes,
@@ -957,11 +958,13 @@ function getObjectById(id) {
   return result;
 }
 
-function followTargets(camera) {
+function followTargets(camera, positionOnly = true) {
   const targets = [];
   forObjects(object => {
     if (!object.isMesh && object.userData.type !== 'group') return;
-    for (let node = camera; node; node = node.parent) if (node === object) return;
+    if (positionOnly) {
+      for (let node = camera; node; node = node.parent) if (node === object) return;
+    }
     targets.push(object);
   });
   return targets;
@@ -976,14 +979,18 @@ function captureFollowOffset(camera, target) {
 function updateFollowers() {
   forObjects(camera => {
     const data = camera.userData;
-    if (!camera.isCamera || !data.followTarget || !data.followOffset || !inActiveScene(camera)) return;
-    const target = getObjectById(data.followTarget);
-    if (!target || !inActiveScene(target)) return;
-    const center = target.getWorldPosition(new Vector3());
-    const desired = new Vector3().fromArray(data.followOffset).add(center);
-    const position = data.affectsSolids && collisions ? collisions.followCamera(root, camera, desired) : desired;
-    camera.position.copy(camera.parent.worldToLocal(position.clone()));
-    camera.lookAt(center);
+    if (!camera.isCamera || (!data.followTarget && !data.focusTarget) || !inActiveScene(camera)) return;
+    const follow = data.followOffset ? getObjectById(data.followTarget) : undefined;
+    const activeFollow = follow && inActiveScene(follow) ? follow : undefined;
+    if (activeFollow) {
+      const center = activeFollow.getWorldPosition(new Vector3());
+      const desired = new Vector3().fromArray(data.followOffset).add(center);
+      const position = data.affectsSolids && collisions ? collisions.followCamera(root, camera, desired) : desired;
+      camera.position.copy(camera.parent.worldToLocal(position.clone()));
+    }
+    const focus = getObjectById(data.focusTarget);
+    const target = focus && inActiveScene(focus) ? focus : activeFollow;
+    if (target) aimCameraAt(camera, target);
   });
 }
 
@@ -1637,6 +1644,7 @@ function paintInspector() {
     highlight: (axis) => view?.highlightEdges(axis ? object : undefined, axis),
     pick: pickSceneColor,
     followOptions: object.isCamera ? followTargets(object) : [],
+    focusOptions: object.isCamera ? followTargets(object, false) : [],
     orbitOptions: orbitCenters(object),
     collisionChanged: paintList,
     setFollow: (id) => edit(() => {
@@ -1653,6 +1661,12 @@ function paintInspector() {
       updateCameraView();
       refreshTransform();
     }, 'Kamera takibini değiştir'),
+    setFocus: (id) => edit(() => {
+      const target = followTargets(object, false).find(item => item.userData.objectId === id);
+      object.userData.focusTarget = target?.userData.objectId ?? null;
+      updateCameraView();
+      refreshTransform();
+    }, 'Kamera odağını değiştir'),
     collisionReady: Boolean(collisions),
     changed: (changedObject, from) => {
       if (changedObject && settleObject(changedObject, from) === false)
@@ -1909,6 +1923,7 @@ presets = installPresets({
         object.traverse(child => {
           if (child.isCamera) {
             child.userData.followTarget = idMap.get(child.userData.followTarget) ?? null;
+            child.userData.focusTarget = idMap.get(child.userData.focusTarget) ?? null;
             if (!child.userData.followTarget) child.userData.followOffset = null;
           }
           child.userData.orbit.target = idMap.get(child.userData.orbit.target) ?? null;
@@ -2118,6 +2133,7 @@ function clearObjectTargets(removedObjects) {
       object.userData.followTarget = null;
       object.userData.followOffset = null;
     }
+    if (removedObjects.has(object.userData.focusTarget)) object.userData.focusTarget = null;
     if (removedObjects.has(object.userData.orbit.target)) object.userData.orbit.target = null;
   });
 }
@@ -2320,6 +2336,8 @@ function duplicateObjects(objects = independentSelection()) {
       copy.traverse(child => {
         const target = ids.get(child.userData.followTarget);
         if (target) child.userData.followTarget = target;
+        const focus = ids.get(child.userData.focusTarget);
+        if (focus) child.userData.focusTarget = focus;
         const center = ids.get(child.userData.orbit.target);
         if (center) child.userData.orbit.target = center;
         child.userData.bones = child.userData.bones.flatMap(bone =>
@@ -2444,6 +2462,7 @@ function mergeSelection(objects) {
         object.userData.followTarget = merged.userData.objectId;
         captureFollowOffset(object, merged);
       }
+      if (mergedIds.has(object.userData.focusTarget)) object.userData.focusTarget = merged.userData.objectId;
       if (mergedIds.has(object.userData.orbit.target)) object.userData.orbit.target = merged.userData.objectId;
     });
     const connected = new Set();

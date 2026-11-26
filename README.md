@@ -99,6 +99,8 @@ Sahne araçlarındaki **Birleştir** düğmesi, birbirine değmeyen nesneleri de
 
 ## Kayıt ve model içe aktarma
 
+Kameranın **Kamera takibi → Odak hedefi** alanı, bakışı seçilen nesnenin merkezinde tutar. **Takip hedefi** kameranın konumunu belirler. İki alan birlikte kullanıldığında hedefler farklı olabilir.
+
 **Render al → 3B model dışa aktar → Godot çarpışması** GLB veya glTF dosyasına katı nesneler için ayrı çarpışma geometrisi ekler. Godot sahne içe aktarmasında düğüm adı son ekleri etkin olmalıdır. Yüzde 0 opaklıktaki katı nesneler görünmez engel olarak kullanılabilir. Sabit çevre şekilleri seçilen karedeki konumda kalır. Araç gibi hareketli bir model için dışbükey şekilleri seçip Godot’ta aracın fizik gövdesine bağlayın. Karakterin çarpışma maskesi engelin katmanını içermelidir.
 
 Windows uygulamasında **Kaydet** veya `Ctrl+S` ilk kullanımda bir dosya seçtirir. Açılan veya kaydedilen projede sonraki kayıt aynı dosyayı günceller. **Farklı Kaydet** veya `Ctrl+Shift+S` ile yeni bir hedef seçebilirsiniz.

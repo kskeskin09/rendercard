@@ -1,3 +1,12 @@
+import { Vector3 } from 'three';
+
+export function aimCameraAt(camera, target) {
+  const center = target.getWorldPosition(new Vector3());
+  if (camera.getWorldPosition(new Vector3()).distanceToSquared(center) <= 1e-12) return false;
+  camera.lookAt(center);
+  return true;
+}
+
 export function slideMovement(origin, desired, cast) {
   const position = origin.clone();
   const travel = desired.clone().sub(origin);

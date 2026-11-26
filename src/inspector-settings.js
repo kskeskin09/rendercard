@@ -73,6 +73,7 @@ export function settingsMarkup(object) {
     '<label class="check-field" title="Nesnenin seçili merkezine, nesneyle birlikte hareket eden bir bağlantı noktası ekler."><input id="skeleton-joint" type="checkbox"> İskelet bağı</label></div>' +
     (object.isCamera ? '<div class="inspector-block"><h3>Kamera takibi</h3>' +
       '<label class="field">Takip hedefi<select id="follow-target"></select></label>' +
+      '<label class="field" title="Kamera konumu korunur ve bakış seçilen nesnenin merkezine döner. Takiple birlikte kullanılabilir.">Odak hedefi<select id="focus-target"></select></label>' +
       '<div id="follow-settings" hidden><output id="follow-distance"></output>' +
       '<button id="follow-rebase" class="quiet" title="Mevcut konumu yeni takip açısı ve mesafesi olarak kullan">Mesafeyi yeniden al</button></div></div>' : '') +
     '<div class="inspector-block"><h3>Görünüm</h3>' +
@@ -207,8 +208,10 @@ export function bindSettings(
     toggleElastic,
     refreshInspector,
     followOptions,
+    focusOptions,
     orbitOptions,
     setFollow,
+    setFocus,
     collisionChanged,
     collisionReady,
     pick,
@@ -278,6 +281,10 @@ export function bindSettings(
   }
   if ($('follow-target')) {
     const picker = $('follow-target');
+    const focus = $('focus-target');
+    focus.replaceChildren(new Option('Odak kapalı', ''), ...focusOptions.map(target => new Option(target.name, target.userData.objectId)));
+    focus.value = data.focusTarget ?? '';
+    focus.onchange = () => setFocus(focus.value);
     picker.replaceChildren(new Option('Takip kapalı', ''), ...followOptions.map(target => new Option(target.name, target.userData.objectId)));
     function repaintFollow() {
       picker.value = data.followTarget ?? '';

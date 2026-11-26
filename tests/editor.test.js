@@ -44,6 +44,32 @@ const close = (actual, expected) =>
   assert(Math.abs(actual - expected) < 0.0001, `${actual} != ${expected}`);
 const bounds = (object) => new Box3().setFromObject(object, true);
 
+test('camera focus aims at the world pivot without moving the camera and survives saving', async () => {
+  const { aimCameraAt } = await import('../src/camera-follow.js');
+  const root = new Group();
+  const group = makeObject('group');
+  const target = makeObject('box');
+  const camera = makeObject('camera');
+  root.add(camera, group);
+  group.add(target);
+  group.position.set(3, 1, 0);
+  target.position.x = 1;
+  camera.position.set(1, 2, 5);
+  camera.userData.focusTarget = target.userData.objectId;
+  const [copy] = decodeProject(encodeProject(root, 120)).objects;
+  assert.equal(copy.userData.focusTarget, target.userData.objectId);
+  assert.equal(copy.userData.followTarget, null);
+  const original = camera.position.clone();
+  assert(aimCameraAt(camera, target));
+  close(camera.position.distanceTo(original), 0);
+  const expected = new Vector3(3, -1, -5).normalize();
+  close(camera.getWorldDirection(new Vector3()).distanceTo(expected), 0);
+  const previous = camera.quaternion.clone();
+  target.position.copy(group.worldToLocal(original.clone()));
+  assert.equal(aimCameraAt(camera, target), false);
+  close(camera.quaternion.angleTo(previous), 0);
+});
+
 test('scale snapping brings a dragged extended face to contact without shifting the fixed edge', async () => {
   const { snapResize, snapSelectionSize } = await import('../src/snapping.js');
   const { touches } = await import('../src/collisions.js');
