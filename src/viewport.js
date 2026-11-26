@@ -281,9 +281,49 @@ export function createViewport(
   outline.material.opacity = 0.56;
   outline.visible = false;
   scene.add(outline);
-  const referenceOutline = new THREE.BoxHelper(new THREE.Object3D(), '#96b84c');
+  const referenceOutline = new THREE.Box3Helper(new THREE.Box3(), '#e8ff80');
+  referenceOutline.material.depthTest = false;
+  referenceOutline.renderOrder = 12;
   referenceOutline.visible = false;
   scene.add(referenceOutline);
+  const secondaryOutlines = new Map();
+  const partOverlay = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({
+    color: '#a9e7ff', transparent: true, opacity: .22, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
+  }));
+  partOverlay.matrixAutoUpdate = false;
+  partOverlay.renderOrder = 11;
+  partOverlay.visible = false;
+  scene.add(partOverlay);
+  let highlightedPart;
+  let overlaySource;
+  let overlaySlot;
+  function updatePartOverlay(clean) {
+    partOverlay.visible = false;
+    if (clean || !highlightedPart) return;
+    const { object, slot } = highlightedPart;
+    if (object !== selected || !object.visible || object.material[slot]?.visible === false) return;
+    const source = object.geometry;
+    if (overlaySource !== source || overlaySlot !== slot) {
+      partOverlay.geometry.dispose();
+      const indices = [];
+      const end = Math.min(source.index.count, source.drawRange.start + source.drawRange.count);
+      for (const group of source.groups) {
+        if (group.materialIndex !== slot) continue;
+        for (let index = Math.max(group.start, source.drawRange.start); index < Math.min(end, group.start + group.count); index++)
+          indices.push(source.index.getX(index));
+      }
+      partOverlay.geometry = new THREE.BufferGeometry()
+        .setAttribute('position', source.attributes.position).setIndex(indices);
+      overlaySource = source;
+      overlaySlot = slot;
+    }
+    if (!partOverlay.geometry.index.count) return;
+    object.updateWorldMatrix(true, false);
+    partOverlay.matrix.copy(object.matrixWorld);
+    partOverlay.matrixWorldNeedsUpdate = true;
+    partOverlay.visible = true;
+  }
   const pivots = new THREE.Points(
     new THREE.BufferGeometry(),
     new THREE.PointsMaterial({
@@ -302,10 +342,27 @@ export function createViewport(
   let alignment;
   let mode = 'select';
 
-  function updateSelection(object, nextMode, targets = []) {
+  function updateSelection(object, nextMode, targets = [], allTargets = targets) {
     highlightEdges();
     selected = object;
-    alignment = targets.length > 1 ? targets[0] : undefined;
+    alignment = allTargets.length > 1 ? targets[0] : undefined;
+    const others = new Set(allTargets.length > 1 ? allTargets.filter(target => target !== alignment) : []);
+    for (const [target, helper] of secondaryOutlines) {
+      if (others.has(target)) continue;
+      helper.removeFromParent();
+      helper.dispose();
+      secondaryOutlines.delete(target);
+    }
+    for (const target of others) {
+      if (secondaryOutlines.has(target)) continue;
+      const helper = new THREE.Box3Helper(new THREE.Box3(), '#8ccabd');
+      helper.material.transparent = true;
+      helper.material.opacity = .68;
+      helper.material.depthTest = false;
+      helper.renderOrder = 11;
+      scene.add(helper);
+      secondaryOutlines.set(target, helper);
+    }
     mode = nextMode;
     if ((!selected && targets.length < 2) || mode === 'select') transform.detach();
     else {
@@ -319,6 +376,16 @@ export function createViewport(
       }
       transform.attach(selected ?? selectionPivot);
       transform.setMode(mode);
+    }
+  }
+
+  function updateOutline(helper, object, clean) {
+    helper.visible = !clean && Boolean(object?.visible);
+    if (!helper.visible) return;
+    helper.box.setFromObject(object);
+    if (helper.box.isEmpty()) {
+      const pivot = object.getWorldPosition(new THREE.Vector3());
+      helper.box.set(pivot.clone().addScalar(-.16), pivot.addScalar(.16));
     }
   }
 
@@ -665,8 +732,8 @@ export function createViewport(
         selected && !selected.isLight && !selected.isCamera && selected.visible
       );
     if (outline.visible) outline.setFromObject(selected);
-    referenceOutline.visible = !clean && Boolean(alignment?.visible && (alignment.isMesh || alignment.isGroup));
-    if (referenceOutline.visible) referenceOutline.setFromObject(alignment);
+    updateOutline(referenceOutline, alignment, clean);
+    for (const [object, helper] of secondaryOutlines) updateOutline(helper, object, clean);
     pivots.visible = !clean && showPivots;
     lightMarkers.visible = !clean && (!useShot || !shotObject);
     cameraHelpers.visible = lightMarkers.visible;
@@ -709,6 +776,7 @@ export function createViewport(
       if (pivots.visible) updateMarkers(pivots, positions);
     }
     withSceneCuts(root, () => {
+      updatePartOverlay(clean);
       rig.updateGuides(!clean && !useShot && !measurement.active);
       rig.updateSkin();
       updateEmitters();
@@ -868,6 +936,9 @@ export function createViewport(
       orbit.update();
     },
     highlightEdges,
+    highlightPart(object, slot) {
+      highlightedPart = object ? { object, slot } : undefined;
+    },
     setRigMode(value, joint) {
       rig.setMode(value, joint);
       updateControls();

@@ -1445,7 +1445,7 @@ textarea,
   padding: 4px 5px;
 }
 #timeline-camera-field select { max-width: 100%; }
-.object-row.alignment-reference { background: #cddfaf; color: #27351a; }
+.object-row.alignment-reference { background: #c4df91; color: #213514; box-shadow: inset 0 0 0 1px #82a64c; }
 .negative-badge { font-weight: 800; color: #754aa2; }
 #render-preview {
   width: min(1120px, calc(100vw - 2rem));

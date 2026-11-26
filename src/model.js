@@ -41,7 +41,7 @@ import { roundedEdges } from './edge-geometry.js';
 import { roundedPolygon } from './rounded-polygon.js';
 import { defaultRenderSize, validRenderSize } from './render-settings.js';
 import { updateOpacity } from './opacity.js';
-import { releaseCut, sceneCuts } from './boolean-cuts.js';
+import { joinedInteriorCuts, releaseCut, sceneCuts } from './boolean-cuts.js';
 import { skyTiles } from './sky-texture.js';
 import { defaultOrbit, orbitPlanes } from './orbit-motion.js';
 import { defaultLetterDepth, isLetter, letterGeometry, letterLayout, maximumLetterRadius } from './text-geometry.js';
@@ -71,7 +71,7 @@ export const types = {
   camera: 'Kamera'
 };
 export const levels = [12, 24, 48];
-export const projectVersion = 18;
+export const projectVersion = 19;
 export const shapeSides = [3, 4, 5, 6, 8, 16, 32, 64];
 export const isPrimitive = type => ['box', 'sphere', 'prism', 'pyramid', 'triangle'].includes(type);
 const channels = ['position', 'rotation', 'scale'];
@@ -422,7 +422,7 @@ export function joinMeshes(objects) {
   const offset = new Matrix4().makeTranslation(-center.x, -center.y, -center.z);
   const mixed = objects.some(object => object.userData.negative) &&
     objects.some(object => !object.userData.negative);
-  const { cuts } = mixed ? sceneCuts(parent, objects) : { cuts: new Map() };
+  const cuts = mixed ? sceneCuts(parent, objects).cuts : joinedInteriorCuts(objects);
   const parts = objects.flatMap((object) => {
     if (mixed && object.userData.negative) return [];
     object.updateMatrix();
@@ -451,6 +451,7 @@ export function joinMeshes(objects) {
       }
     ];
   });
+  if (!mixed) for (const geometry of cuts.values()) geometry.dispose();
   if (!parts.length) {
     objects.forEach(disposeObject);
     fitParentAfterJoin(parent);
@@ -823,7 +824,7 @@ export function decodeProject(project) {
     return object;
   }
   if (
-    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, projectVersion].includes(project?.version) ||
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, projectVersion].includes(project?.version) ||
     (project.renderSize != null && !validRenderSize(project.renderSize)) ||
     (project.name != null && (typeof project.name !== 'string' || project.name.length > 80 || !project.name.trim())) ||
     !validFrame(project.duration) ||

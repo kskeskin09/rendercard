@@ -8,8 +8,16 @@ import {
 } from 'three';
 import { skyTexture, skyTiles } from './sky-texture.js';
 
-export const tiles = { checker: 'Dama', ceramic: 'Seramik', brick: 'Tuğla', grass: 'Çim', asphalt: 'Asfalt', ...skyTiles };
-const tileColors = { checker: '#eeeeee', ceramic: '#e0cdb1', brick: '#b3553e', grass: '#527f35', asphalt: '#515256', clearSky: '#ffffff', stars: '#ffffff' };
+export const tiles = { checker: 'Dama', ceramic: 'Seramik', brick: 'Tuğla', grass: 'Çim', asphalt: 'Asfalt', rubber: 'Lastik', ...skyTiles };
+const tileColors = { checker: '#eeeeee', ceramic: '#e0cdb1', brick: '#b3553e', grass: '#527f35', asphalt: '#515256', rubber: '#48494c', clearSky: '#ffffff', stars: '#ffffff' };
+
+function tread(x, y, grain) {
+  const lateral = Math.abs(x - 31.5);
+  const shoulderGroove = Math.abs(lateral - 16) < 2;
+  const channel = (y + Math.floor(lateral / 2)) % 16;
+  if (lateral < 2 || shoulderGroove || channel < 3) return 70 + grain * .45;
+  return (channel === 3 || channel === 15 ? 223 : 187) + grain * .42;
+}
 
 export function updateTileBounds(material, buffer) {
   const mapping = material.userData.tileMapping;
@@ -68,7 +76,8 @@ function surfaceTexture(tile) {
         const noise = (((x * 1640531513) ^ (y * 1013904223) ^ (x * y * 7919)) >>> 8) & 63;
         const cellX = (x + (y < 32 ? 16 : 0)) % 32;
         const value =
-          tile === 'grass' ? 177 + noise * 1.18
+          tile === 'rubber' ? tread(x, y, noise)
+            : tile === 'grass' ? 177 + noise * 1.18
             : tile === 'asphalt' ? 201 + noise * .85
             : tile === 'checker'
             ? x < 32 === y < 32

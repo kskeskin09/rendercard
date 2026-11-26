@@ -145,6 +145,70 @@ function clipHierarchy(boxes, cuts, cutters) {
   }
 }
 
+export function joinedInteriorCuts(objects) {
+  const result = new Map();
+  const items = objects.map(mesh => {
+    mesh.updateWorldMatrix(true, false);
+    if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+    return { mesh, bounds: mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld) };
+  });
+  const occluders = items.filter(({ mesh }) => {
+    const data = mesh.userData;
+    if (data.negative || data.hidden) return false;
+    for (let node = mesh; node; node = node.parent)
+      if ((node.userData.opacity ?? 100) < 100) return false;
+    if (Array.isArray(mesh.material) && mesh.material.some((material, index) =>
+      (data.parts[index].opacity ?? 100) < 100 || !material.visible || material.alphaTest > 0 || data.parts[index].alphaBlend)) return false;
+    return !['mesh', 'letter'].includes(data.type) || closedSurface(mesh.geometry);
+  });
+  for (const [index, { mesh, bounds }] of items.entries()) {
+    const blockers = occluders.filter(item => item.mesh !== mesh && item.bounds.intersectsBox(bounds));
+    if (!blockers.length) continue;
+    const inverse = mesh.matrixWorld.clone().invert();
+    let geometry = mesh.geometry;
+    for (const item of blockers) {
+      if (!geometry.drawRange.count) break;
+      const size = items.indexOf(item) < index ? 1.000001 : .999999;
+      const center = item.mesh.geometry.boundingBox.getCenter(new Vector3());
+      const adjustment = new Matrix4().makeScale(size, size, size).setPosition(center.multiplyScalar(1 - size));
+      const matrix = new Matrix4().multiplyMatrices(inverse, item.mesh.matrixWorld).multiply(adjustment);
+      const materials = mesh.material;
+      const obstacle = brushFor(item.mesh.geometry, Array.isArray(materials) ? materials[0] : materials, matrix);
+      const output = evaluator.evaluate(brushFor(geometry, materials), obstacle, HOLLOW_SUBTRACTION);
+      if (Array.isArray(materials)) {
+        for (const group of output.geometry.groups)
+          group.materialIndex = Math.max(0, materials.indexOf(output.material[group.materialIndex]));
+      }
+      if (geometry !== mesh.geometry) geometry.dispose();
+      geometry = output.geometry;
+    }
+    if (geometry !== mesh.geometry) result.set(mesh, geometry);
+  }
+  return result;
+}
+
+function closedSurface(geometry) {
+  const position = geometry.attributes.position;
+  const vertices = Array.from({ length: position.count }, (_, index) =>
+    [position.getX(index), position.getY(index), position.getZ(index)]
+      .map(value => Math.round(value * 1e6)).join(','));
+  const count = Math.min(geometry.index.count, geometry.drawRange.start + geometry.drawRange.count);
+  const edges = new Map();
+  for (let i = geometry.drawRange.start; i + 2 < count; i += 3) {
+    const triangle = [0, 1, 2].map(offset => vertices[geometry.index.getX(i + offset)]);
+    if (new Set(triangle).size !== 3) continue;
+    for (let j = 0; j < 3; j++) {
+      const a = triangle[j], b = triangle[(j + 1) % 3];
+      const edge = a < b ? a + ':' + b : b + ':' + a;
+      const states = edges.get(edge) ?? [];
+      states.push(a < b);
+      if (states.length > 2) return false;
+      edges.set(edge, states);
+    }
+  }
+  return edges.size > 0 && [...edges.values()].every(states => states.length === 2 && states[0] !== states[1]);
+}
+
 export function sceneCuts(root, selection, includeElastic = !selection) {
   const cuts = new Map();
   const cutters = new Set();

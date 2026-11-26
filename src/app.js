@@ -32,7 +32,7 @@ import {
 import { settingsMarkup, bindSettings } from './inspector-settings.js';
 import { createHistory } from './history.js';
 import { installPresets } from './presets.js';
-import { snapToGrid, snapToSurfaces } from './snapping.js';
+import { snapResize, snapSelectionSize, snapToGrid, snapToSurfaces } from './snapping.js';
 import { angularTrajectory, trajectory } from './dynamics.js';
 import { chooseTrack, hasKeys, keysFor, mainClip, posesOf } from './clips.js';
 import { cameraAt, writeCameraKey } from './camera-track.js';
@@ -530,7 +530,7 @@ function setMode(next) {
   all('[data-mode]').forEach((button) =>
     button.setAttribute('aria-pressed', button.dataset.mode === mode)
   );
-  view?.updateSelection(single(), modes.includes(mode) ? mode : 'select', independentSelection());
+  view?.updateSelection(single(), modes.includes(mode) ? mode : 'select', independentSelection(), [...selected]);
 }
 
 for (const element of all('[data-icon]'))
@@ -1446,6 +1446,7 @@ function paintInspector() {
     inspectorPositions.set(paintedInspector, scroller.scrollTop);
   paintedInspector = object;
   if (!object) {
+    view?.highlightPart();
     panel.innerHTML = '<p class="empty"></p>';
     panel.firstChild.textContent = selected.size
       ? selected.size + ' nesne seçili. Birlikte düzenlemek için grupla.'
@@ -1517,6 +1518,7 @@ function paintInspector() {
         name + (open ? ' bölümünü daralt' : ' bölümünü genişlet')
       );
       toggle.setAttribute('aria-expanded', open);
+      if (name === 'Görünüm') paintPartHighlight();
     };
     toggle.onclick = () => {
       if (openInspectorSections.has(name)) openInspectorSections.delete(name);
@@ -1683,8 +1685,19 @@ function paintInspector() {
     refreshInspector: paintInspector
   });
   bindSkeletonInspector(object);
+  paintPartHighlight();
   refreshTransform();
   scroller.scrollTop = inspectorPositions.get(object) ?? 0;
+}
+
+function paintPartHighlight() {
+  const picker = $('mesh-part');
+  const object = single();
+  if (!picker || !openInspectorSections.has('Görünüm') || object?.userData.finish !== 'parts' || picker.value === '') {
+    view?.highlightPart();
+    return;
+  }
+  view?.highlightPart(object, Number(picker.value));
 }
 
 function refreshTransform() {
@@ -3193,6 +3206,7 @@ try {
         drag = {
           before: captureScene(), targets, ignored,
           center: pivot.position.clone(),
+          axes: [...(axis ?? '').toLowerCase()].filter(letter => 'xyz'.includes(letter)),
           baseline: targets.map(target => ({
             position: target.getWorldPosition(new Vector3()),
             rotation: target.getWorldQuaternion(new Quaternion()),
@@ -3221,8 +3235,16 @@ try {
     change: (symmetric, pivot) => {
       if (drag?.targets && pivot) {
         const { targets, baseline, center, last, ignored } = drag;
-        const next = selectionTransforms(baseline, center, pivot, mode, symmetric, dimensionStep());
-        targets.forEach((target, index) => applySelectionTransform(target, next[index], mode));
+        const step = dimensionStep();
+        const apply = scale => {
+          const transform = { position: pivot.position, quaternion: pivot.quaternion, scale };
+          const next = selectionTransforms(baseline, center, transform, mode, symmetric, step);
+          targets.forEach((target, index) => applySelectionTransform(target, next[index], mode));
+        };
+        apply(pivot.scale);
+        const proposed = mode === 'scale' && step ? snapSelectionSize(targets, drag.axes, pivot.scale, apply, step) : pivot.scale;
+        if (mode === 'scale' && $('snap-surface').checked)
+          snapResize(root, targets, drag.axes, proposed, apply, collisions && (target => collisions.touches(root, target)));
         const hits = new Set();
         for (const [index, target] of targets.entries()) {
           if (mode === 'translate') {
@@ -3249,24 +3271,18 @@ try {
       const object = single();
       if (!drag || !object) return;
       if (mode === 'scale') {
-        object.scale.copy(
-          constrainDimensions(
-            drag.scale,
-            object.scale,
-            drag.bounds.getSize(new Vector3()),
-            drag.axes,
-            object.userData.linkedSize,
-            dimensionStep()
-          )
-        );
-        anchorScale(
-          object,
-          drag.position,
-          drag.scale,
-          drag.bounds,
-          symmetric,
-          drag.direction
-        );
+        const linked = object.userData.linkedSize;
+        const proposed = constrainDimensions(drag.scale, object.scale, drag.bounds.getSize(new Vector3()),
+          drag.axes, linked, dimensionStep());
+        const linkedAxis = linked ? drag.axes[0] : undefined;
+        const apply = scale => {
+          object.scale.copy(scale);
+          if (linkedAxis) object.scale.copy(proposed).multiplyScalar(scale[linkedAxis] / proposed[linkedAxis]);
+          anchorScale(object, drag.position, drag.scale, drag.bounds, symmetric, drag.direction);
+        };
+        apply(proposed);
+        if ($('snap-surface').checked) snapResize(root, [object],
+          linkedAxis ? [linkedAxis] : drag.axes, proposed, apply, collisions && (target => collisions.touches(root, target)));
       }
       if (mode === 'translate') {
         const step = MathUtils.clamp(

@@ -44,6 +44,57 @@ const close = (actual, expected) =>
   assert(Math.abs(actual - expected) < 0.0001, `${actual} != ${expected}`);
 const bounds = (object) => new Box3().setFromObject(object, true);
 
+test('scale snapping brings a dragged extended face to contact without shifting the fixed edge', async () => {
+  const { snapResize, snapSelectionSize } = await import('../src/snapping.js');
+  const { touches } = await import('../src/collisions.js');
+  assert(await initializeCollisions());
+  const root = new Group();
+  const box = makeObject('box');
+  const wall = makeObject('box');
+  wall.position.x = 2;
+  root.add(box, wall);
+  const basis = box.scale.clone();
+  const pivot = box.position.clone();
+  const local = localBounds(box);
+  const apply = scale => {
+    box.scale.copy(scale);
+    anchorScale(box, pivot, basis, local, false, new Vector3(1, 0, 0));
+  };
+  const proposed = new Vector3(1.86, 1, 1);
+  apply(proposed);
+  assert(snapResize(root, [box], ['x'], proposed, apply, object => touches(root, object)));
+  close(bounds(box).min.x, -.5);
+  close(bounds(box).max.x, 1.5);
+  close(box.scale.x, 2);
+  apply(proposed);
+  snapSelectionSize([box], ['x'], proposed, apply, .5);
+  close(box.scale.x, 2);
+});
+
+test('joining discards an opaque enclosed shell but preserves a shell visible through transparency', () => {
+  function join(opacity) {
+    const root = new Group();
+    const inner = makeObject('box', 'İç', '#d94242');
+    const outer = makeObject('box', 'Dış', '#4069d8', 24, { opacity });
+    outer.scale.setScalar(3);
+    root.add(inner, outer);
+    return joinMeshes([inner, outer]);
+  }
+  const opaque = join(100);
+  assert.equal(opaque.material.length, 1);
+  assert.equal(opaque.material[0].color.getHexString(), '4069d8');
+  assert.equal(opaque.geometry.index.count, 36);
+  assert.equal(join(50).material.length, 2);
+});
+
+test('rubber is a repeatable dark tread preset with visible grooves', () => {
+  const object = makeObject('box', 'Lastik', undefined, undefined, { finish: 'tile', tile: 'rubber' });
+  const { data } = object.material.map.image;
+  assert(data[31 * 4] < 110);
+  assert(data[(8 * 64 + 25) * 4] > 180);
+  assert.equal(object.material.userData.tileMapping.tint.value.getHexString(), '48494c');
+});
+
 test('Godot export builds separate scaled colliders for solid meshes including invisible obstacles', async () => {
   const { snapshotModel, disposeModel } = await import('../src/model-export.js');
   const root = new Group();
